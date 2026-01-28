@@ -28,7 +28,8 @@
     "lint": "eslint --fix && tsc --noEmit",
     "build": "rimraf build && tsup",
     "postbuild": "npm pack",
-    "prepare": "husky"
+    "prepare": "husky",
+    "test:examples": "pnpm run build && cd examples && pnpm i && pnpm test"
   },
   "license": "MIT",
   "dependencies": {
