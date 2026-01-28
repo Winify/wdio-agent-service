@@ -1,3 +1,4 @@
+import 'webdriverio';
 import interactableBrowserElementsScript from './get-interactable-browser-elements';
 import { encode } from '@toon-format/toon';
 

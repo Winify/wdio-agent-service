@@ -1,3 +1,4 @@
+import 'webdriverio';
 import type { ActionType, AgentAction } from '../types';
 
 const actionsByType: Record<ActionType, (_browser: WebdriverIO.Browser, action: AgentAction) => Promise<void>> = {

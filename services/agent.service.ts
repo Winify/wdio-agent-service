@@ -1,6 +1,7 @@
 import type { Services } from '@wdio/types';
 import type { AgentAction, AgentServiceConfig } from '../types';
 import type { LLMProvider } from '../providers';
+import 'webdriverio';
 import { initializeProvider } from '../providers';
 import { getElements } from '../scripts/get-elements';
 import { userPrompt } from '../prompts';

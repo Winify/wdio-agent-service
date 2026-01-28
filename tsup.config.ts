@@ -1,15 +1,12 @@
 import { defineConfig } from 'tsup';
 
 export default defineConfig({
-  entry: [
-    'types/index.ts',
-    'services/agent.service.ts',
-  ], // Entry points
-  format: ['esm'], // Build for commonJS and ESmodules
-  dts: true, // Generate declaration file (.d.ts)
+  entry: ['types/index.ts'],
+  format: ['esm'],
+  dts: true,
   splitting: false,
   sourcemap: true,
   clean: true,
   platform: 'node',
-  outDir: 'lib',
+  outDir: 'build',
 });

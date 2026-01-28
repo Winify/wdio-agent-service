@@ -17,15 +17,18 @@
     "ollama"
   ],
   "type": "module",
-  "main": "./build/types/index.js",
-  "module": "./build/types/index.js",
-  "types": "./build/types/index.d.ts",
+  "main": "./build/index.js",
+  "module": "./build/index.js",
+  "types": "./build/index.d.ts",
   "files": [
     "build",
     "README.md"
   ],
   "scripts": {
-    "lint": "eslint --fix"
+    "lint": "eslint --fix && tsc --noEmit",
+    "build": "rimraf build && tsup",
+    "postbuild": "npm pack",
+    "prepare": "husky"
   },
   "license": "MIT",
   "dependencies": {
