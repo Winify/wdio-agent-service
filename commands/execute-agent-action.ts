@@ -2,16 +2,22 @@ import 'webdriverio';
 import type { ActionType, AgentAction } from '../types';
 
 const actionsByType: Record<ActionType, (_browser: WebdriverIO.Browser, action: AgentAction) => Promise<void>> = {
+  // Browser actions
   CLICK: async (_browser: WebdriverIO.Browser, action: AgentAction) => {
     await _browser.$(action.target).click();
-  },
-  SET_VALUE: async (_browser: WebdriverIO.Browser, action: AgentAction) => {
-    await _browser.$(action.target).setValue(action.value!);
   },
   NAVIGATE: async (_browser: WebdriverIO.Browser, action: AgentAction) => {
     const url = action.target;
     const targetUrl = url.match(/^https?:\/\//) ? url : `https://${url}`;
     await _browser.url(targetUrl);
+  },
+  // Mobile actions
+  TAP: async (_browser: WebdriverIO.Browser, action: AgentAction) => {
+    await _browser.$(action.target).tap();
+  },
+  // Shared actions
+  SET_VALUE: async (_browser: WebdriverIO.Browser, action: AgentAction) => {
+    await _browser.$(action.target).setValue(action.value!);
   },
 };
 

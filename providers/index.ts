@@ -5,18 +5,13 @@ export type Providers = 'ollama';
 
 /**
  * LLM Provider Interface
- * Extensible pattern for future providers (OpenAI, Anthropic, etc.)
+ * Extend this to add new providers (anthropic, openai, etc.)
  */
 export interface LLMProvider {
-  send(prompt: PromptInput | string): Promise<string>;
+  send(prompt: PromptInput): Promise<string>;
 }
 
-export const initializeProvider = (config: AgentServiceConfig): LLMProvider => {
-  switch (config.provider) {
-    case 'ollama':
-      return new OllamaProvider(config);
-    default:
-      throw new Error(`Unsupported provider: ${config.provider}`);
-  }
-};
-
+export function initializeProvider(config: AgentServiceConfig): LLMProvider {
+  // Add new providers here as needed
+  return new OllamaProvider(config);
+}

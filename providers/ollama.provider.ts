@@ -6,16 +6,16 @@ export class OllamaProvider implements LLMProvider {
   constructor(private config: AgentServiceConfig) {
   }
 
-  async send(prompt: PromptInput | string): Promise<string> {
+  async send(prompt: PromptInput): Promise<string> {
     const url = `${this.config.providerUrl}/api/generate`;
 
     const body = {
       model: this.config.model,
-      prompt: typeof prompt === 'string' ? prompt : `${prompt.system}\n\n${prompt.user}`,
+      prompt: `${prompt.system}\n\n${prompt.user}`,
       stream: false,
       options: {
-        temperature: 0.1, // Low temperature for consistent output
-        num_predict: 500, // Limit response length
+        temperature: 0.1,
+        num_predict: 500,
       },
     };
 
