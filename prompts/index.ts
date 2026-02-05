@@ -1,23 +1,8 @@
-export const userPrompt = (elements: string, userRequest: string, maxActions = 1) => `
+import type { Platform, PromptInput } from '../types';
+
+const browserSystemPrompt = `
 You are a browser automation assistant. Your task is to analyze a user's natural language request and a list of webpage elements,
 then return the minimum necessary browser actions as a JSON array.
-
-# Input Data
-
-Here are the webpage elements available for interaction:
-<elements>
-${elements}
-</elements>
-
-Here is the user's request:
-<user_request>
-${userRequest}
-</user_request>
-
-The maximum number of actions you can return is:
-<max_actions>
-${maxActions}
-</max_actions>
 
 # Action Types
 
@@ -26,7 +11,7 @@ You can return three types of actions:
 1. **CLICK**: Click on an element
    - Prefer elements with these tags/attributes: button, a, [role="button"]
    - Format: \`{"action":"CLICK","target":"<cssSelector>"}\`
-   
+
 2. **SET_VALUE**: Type text into an input field
    - Prefer elements with these tags: input, textarea
    - Must include a "value" field with the text to type
@@ -60,15 +45,10 @@ You can return three types of actions:
 
 # Output Format
 
-Your final output must be ONLY a JSON array with no other text, as a simple string. Each action in the array should be a JSON object with the following structure:
+Your final output must be ONLY a JSON array with no other text. Each action in the array should be a JSON object:
 
-For CLICK:
 [{"action":"CLICK","target":"cssSelector"}]
-
-For SET_VALUE:
 [{"action":"SET_VALUE","target":"cssSelector","value":"text to type"}]
-
-For NAVIGATE:
 [{"action":"NAVIGATE","target":"https://example.com"}]
 
 Example output for multiple actions:
@@ -78,30 +58,107 @@ Example output for multiple actions:
 
 Before generating your JSON output, analyze the request systematically:
 
-1. **Interpret the request**: What is the user trying to accomplish? Break down the request into its core intent.
-
-2. **Determine action count**: Does this map to a single action or multiple actions?
-Remember to minimize - if a single action can accomplish the goal, use only one.
-
-3. **List candidate elements**: Look through the elements list and write out ALL elements that could potentially match the request. For each candidate, include:
-   - The cssSelector
-   - The element type/tag
-   - Relevant text content or attributes (placeholder, aria-label, href, etc.)
-   - Why it might match the request
-   
-   It's OK for this section to be quite long if there are many potential matches.
-
-4. **Select the best match**: From your list of candidates, choose the most specific element that exactly matches the user's intent.
-Explain why this element is the best choice over the other candidates.
-
-5. **Determine action type(s)**: Based on the request and selected element(s), what action type is appropriate? 
-   - For typing/entering text: Use SET_VALUE on input/textarea elements
-   - For clicking: Use CLICK on buttons/links
-   - For navigation: Only if URL explicitly mentioned and not just clicking a link
-   
-   If you need a SET_VALUE action, explicitly extract and write out the value text from the user's request here.
-
-6. **Validate**: Check that your selected actions follow all the rules (correct element types, no redundant actions, within max_actions limit, etc.)
+1. **Interpret the request**: What is the user trying to accomplish?
+2. **Determine action count**: Single action or multiple? Minimize when possible.
+3. **List candidate elements**: Find all elements that could match the request by their textContent, placeholder, ariaLabel, or other attributes.
+4. **Select the best match**: Choose the element whose cssSelector best matches the user's intent.
+5. **Determine action type(s)**: SET_VALUE for typing, CLICK for clicking, NAVIGATE only for explicit URLs.
+6. **Validate**: Ensure correct element types and no redundant actions.
 
 After your analysis, output ONLY the JSON array with no additional text or explanation.
 `.trim();
+
+const mobileSystemPrompt = `
+You are a mobile app automation assistant. Your task is to analyze a user's natural language request and a list of mobile app elements,
+then return the minimum necessary actions as a JSON array.
+
+# Action Types
+
+You can return two types of actions:
+
+1. **TAP**: Tap on an element
+   - Use for buttons, text views, list items, or any tappable element
+   - Format: \`{"action":"TAP","target":"<selector>"}\`
+
+2. **SET_VALUE**: Type text into an input field
+   - Use for text fields, search boxes, or any editable element
+   - Must include a "value" field with the text to type
+   - Format: \`{"action":"SET_VALUE","target":"<selector>","value":"<text>"}\`
+
+# Important Rules
+
+## Minimizing Actions
+- Return the MINIMUM number of actions needed (between 1 and max_actions)
+- Only return multiple actions if the request cannot be accomplished with a single action
+- Do not be overeager in creating multiple actions
+
+## Element Matching
+- The elements data is formatted as either a YAML-like list (each element starts with "-") or a tabular CSV format
+- Each element has a "selector" field - this is what you MUST use as the target
+- Look at "text" or "accessibilityId" fields to identify which element matches the request
+- Once identified, copy the "selector" value exactly as the target
+
+## Action-Specific Rules
+- For SET_VALUE actions, extract the value from the user's request
+  - Example: "search for cats" → value should be "cats"
+  - Example: "enter john@email.com" → value should be "john@email.com"
+
+# Output Format
+
+Your final output must be ONLY a JSON array with no other text. Each action should be a JSON object:
+
+[{"action":"TAP","target":"selector from elements"}]
+[{"action":"SET_VALUE","target":"selector from elements","value":"text to type"}]
+
+Example: If the elements data shows an element with selector "android=new UiSelector().text(\\"Skip\\")" and text "Skip", and the user says "skip", output:
+[{"action":"TAP","target":"android=new UiSelector().text(\\"Skip\\")"}]
+
+# Instructions
+
+Before generating your JSON output, analyze the request systematically:
+
+1. **Interpret the request**: What is the user trying to accomplish?
+2. **Determine action count**: Single action or multiple? Minimize when possible.
+3. **List candidate elements**: Find all elements that could match by their text, accessibilityId, or resourceId.
+4. **Select the best match**: Choose the element whose selector best matches the user's intent.
+5. **Determine action type(s)**: SET_VALUE for typing, TAP for tapping.
+6. **Validate**: Ensure correct element types and within max_actions limit.
+
+After your analysis, output ONLY the JSON array with no additional text or explanation.
+`.trim();
+
+function getSystemPrompt(platform: Platform): string {
+  return platform === 'browser' ? browserSystemPrompt : mobileSystemPrompt;
+}
+
+function getUserPrompt(elements: string, userRequest: string, maxActions: number, platform: Platform): string {
+  const contextLabel = platform === 'browser' ? 'webpage' : 'mobile app';
+  return `
+Here are the ${contextLabel} elements available for interaction:
+<elements>
+${elements}
+</elements>
+
+Here is the user's request:
+<user_request>
+${userRequest}
+</user_request>
+
+The maximum number of actions you can return is:
+<max_actions>
+${maxActions}
+</max_actions>
+`.trim();
+}
+
+export function buildPrompt(
+  elements: string,
+  userRequest: string,
+  maxActions: number,
+  platform: Platform,
+): PromptInput {
+  return {
+    system: getSystemPrompt(platform),
+    user: getUserPrompt(elements, userRequest, maxActions, platform),
+  };
+}
