@@ -8,6 +8,9 @@ import {
   getMobileVisibleElements,
   type MobileElementInfo,
 } from '@wdio/mcp/snapshot';
+import logger from '@wdio/logger';
+
+const log = logger('wdio-agent-service');
 
 export type SnapshotType = 'visible' | 'a11y' | 'all';
 
@@ -47,7 +50,7 @@ async function fetchElements(
       elementType: type === 'all' ? 'all' : 'interactable',
     });
   } catch (error) {
-    console.error(`[Agent] Error fetching elements (platform: ${platform}, type: ${type}):`, error);
+    log.error(`[Agent] Error fetching elements (platform: ${platform}, type: ${type}):`, error);
     return [];
   }
 }
@@ -76,9 +79,7 @@ export async function getElements(
   const platform = detectPlatform(browser);
   const elements = await fetchElements(browser, platform, type);
 
-  if (!elements || elements.length === 0) {
-    console.warn(`[Agent] No elements found (platform: ${platform}, type: ${type})`);
-  }
+  log.warn(`[Agent] No elements found (platform: ${platform}, type: ${type})`);
 
   if (toonFormat === 'yaml-like') {
     // Simplify to essential fields - produces YAML-like output, better for smaller models

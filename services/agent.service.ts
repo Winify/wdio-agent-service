@@ -7,6 +7,9 @@ import { getElements } from '../scripts/get-elements';
 import { buildPrompt } from '../prompts';
 import { parseLlmResponse } from '../commands/parse-llm-response';
 import { executeAgentAction } from '../commands/execute-agent-action';
+import logger from '@wdio/logger';
+
+const log = logger('wdio-agent-service');
 
 function detectPlatform(browser: WebdriverIO.Browser): Platform {
   if (browser.isIOS) {
@@ -27,7 +30,6 @@ export default class AgentService implements Services.ServiceInstance {
   private provider!: LLMProvider;
 
   private maxActions!: number;
-  private debug!: boolean;
 
   constructor(serviceOptions: AgentServiceConfig = {}) {
     this.resolvedConfig = {
@@ -36,7 +38,6 @@ export default class AgentService implements Services.ServiceInstance {
       model: serviceOptions.model ?? 'qwen2.5-coder:7b',
       maxActions: serviceOptions.maxActions ?? 1,
       timeout: serviceOptions.timeout ?? 30000,
-      debug: serviceOptions.debug ?? false,
       toonFormat: serviceOptions.toonFormat ?? 'yaml-like',
     };
   }
@@ -46,7 +47,6 @@ export default class AgentService implements Services.ServiceInstance {
     _specs: string[],
     browser: WebdriverIO.Browser,
   ): void {
-    this.debug = this.resolvedConfig.debug!;
     this.maxActions = this.resolvedConfig.maxActions!;
 
     this.provider = initializeProvider(this.resolvedConfig);
@@ -55,23 +55,17 @@ export default class AgentService implements Services.ServiceInstance {
 
     });
 
-    if (this.resolvedConfig.debug) {
-      console.log('[Agent] Service initialized with config:', this.resolvedConfig);
-    }
+    log.debug('[Agent] Service initialized with config:', this.resolvedConfig);
   }
 
   private async executeAgent(_browser: WebdriverIO.Browser, prompt: string): Promise<AgentAction[]> {
     const platform = detectPlatform(_browser);
 
-    if (this.debug) {
-      console.log(`[Agent] Processing prompt: "${prompt}" (platform: ${platform})`);
-    }
+    log.debug(`[Agent] Processing prompt: "${prompt}" (platform: ${platform})`);
 
     const elements = await getElements(_browser, { toonFormat: this.resolvedConfig.toonFormat });
 
-    if (this.debug) {
-      console.log(`[Agent] Found ${elements.slice(1, elements.indexOf(']'))} visible elements`);
-    }
+    log.debug(`[Agent] Found ${elements.slice(1, elements.indexOf(']'))} visible elements`);
 
     const llmPrompt = buildPrompt(elements, prompt, this.maxActions, platform);
 
@@ -79,12 +73,10 @@ export default class AgentService implements Services.ServiceInstance {
 
     const actions = parseLlmResponse(response, this.maxActions);
 
-    if (this.debug) {
-      console.log(`[Agent] Parsed ${actions.length} action(s)`);
-    }
+    log.debug(`[Agent] Parsed ${actions.length} action(s)`);
 
     for (const action of actions) {
-      await executeAgentAction(_browser, this.debug, action);
+      await executeAgentAction(_browser, action);
     }
 
     return actions;

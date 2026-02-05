@@ -1,5 +1,8 @@
 import type { AgentServiceConfig, PromptInput } from '../types';
 import type { LLMProvider } from './index';
+import logger from '@wdio/logger';
+
+const log = logger('wdio-agent-service');
 
 export class OllamaProvider implements LLMProvider {
 
@@ -19,9 +22,7 @@ export class OllamaProvider implements LLMProvider {
       },
     };
 
-    if (this.config.debug) {
-      console.log('[Agent] LLM Request:', JSON.stringify(body, null, 2));
-    }
+    log.debug('[Agent] LLM Request:', JSON.stringify(body, null, 2));
 
     const controller = new AbortController();
     const timeoutId = setTimeout(() => controller.abort(), this.config.timeout);
@@ -45,13 +46,11 @@ export class OllamaProvider implements LLMProvider {
         done: boolean;
       };
 
-      if (this.config.debug) {
-        console.debug('[Agent] LLM Response:', JSON.stringify({
-          model: data.model,
-          response: data.response,
-          done: data.done,
-        }, null, 2));
-      }
+      log.debug('[Agent] LLM Response:', JSON.stringify({
+        model: data.model,
+        response: data.response,
+        done: data.done,
+      }, null, 2));
 
       return data.response ?? '';
 
