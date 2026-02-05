@@ -11,6 +11,9 @@ importers:
       '@types/node':
         specifier: ^24.0.0
         version: 24.10.9
+      '@wdio/logger':
+        specifier: ^9.18.0
+        version: 9.18.0
     devDependencies:
       '@toon-format/toon':
         specifier: ^2.1.0

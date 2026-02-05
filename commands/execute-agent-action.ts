@@ -1,5 +1,8 @@
 import 'webdriverio';
 import type { ActionType, AgentAction } from '../types';
+import logger from '@wdio/logger';
+
+const log = logger('wdio-agent-service');
 
 const actionsByType: Record<ActionType, (_browser: WebdriverIO.Browser, action: AgentAction) => Promise<void>> = {
   // Browser actions
@@ -21,10 +24,8 @@ const actionsByType: Record<ActionType, (_browser: WebdriverIO.Browser, action: 
   },
 };
 
-export const executeAgentAction = async (_browser: WebdriverIO.Browser, debug: boolean, action: AgentAction): Promise<void> => {
-  if (debug) {
-    console.log(`[Agent] Executing: ${action.type} on "${action.target}"${action.value ? ` with value "${action.value}"` : ''}`);
-  }
+export const executeAgentAction = async (_browser: WebdriverIO.Browser, action: AgentAction): Promise<void> => {
+  log.debug(`[Agent] Executing: ${action.type} on "${action.target}"${action.value ? ` with value "${action.value}"` : ''}`);
 
   const agentAction = actionsByType[action.type];
 
