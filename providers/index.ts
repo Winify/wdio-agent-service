@@ -1,17 +1,18 @@
-import type { AgentServiceConfig, PromptInput } from '../types';
+import type { AgentServiceConfig, LLMProvider } from '../types';
 import { OllamaProvider } from './ollama.provider';
+import { AnthropicProvider } from './anthropic.provider';
+import { OpenAIProvider } from './openai.provider';
 
-export type Providers = 'ollama';
-
-/**
- * LLM Provider Interface
- * Extend this to add new providers (anthropic, openai, etc.)
- */
-export interface LLMProvider {
-  send(prompt: PromptInput): Promise<string>;
-}
+export type { LLMProvider };
 
 export function initializeProvider(config: AgentServiceConfig): LLMProvider {
-  // Add new providers here as needed
-  return new OllamaProvider(config);
+  switch (config.provider) {
+    case 'anthropic':
+      return new AnthropicProvider(config);
+    case 'openai':
+      return new OpenAIProvider(config);
+    case 'ollama':
+    default:
+      return new OllamaProvider(config);
+  }
 }

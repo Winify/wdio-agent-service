@@ -4,6 +4,7 @@
   "type": "module",
   "scripts": {
     "test": "wdio wdio.conf.ts",
+    "test:agentic": "wdio wdio.agentic.conf.ts",
     "test:mobile": "wdio wdio.appium.conf.ts"
   },
   "devDependencies": {

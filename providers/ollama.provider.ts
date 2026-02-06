@@ -1,5 +1,4 @@
-import type { AgentServiceConfig, PromptInput } from '../types';
-import type { LLMProvider } from './index';
+import type { AgentServiceConfig, ChatMessage, LLMProvider, LLMProviderOptions, PromptInput } from '../types';
 import logger from '@wdio/logger';
 
 const log = logger('wdio-agent-service');
@@ -9,18 +8,29 @@ export class OllamaProvider implements LLMProvider {
   constructor(private config: AgentServiceConfig) {
   }
 
-  async send(prompt: PromptInput): Promise<string> {
-    const url = `${this.config.providerUrl}/api/generate`;
+  async send(prompt: PromptInput, options?: LLMProviderOptions): Promise<string> {
+    return this.chat([
+      { role: 'system', content: prompt.system },
+      { role: 'user', content: prompt.user },
+    ], options);
+  }
 
-    const body = {
+  async chat(messages: ChatMessage[], options?: LLMProviderOptions): Promise<string> {
+    const url = `${this.config.providerUrl}/api/chat`;
+
+    const body: Record<string, unknown> = {
       model: this.config.model,
-      prompt: `${prompt.system}\n\n${prompt.user}`,
+      messages: messages.map((m) => ({ role: m.role, content: m.content })),
       stream: false,
       options: {
-        temperature: 0.1,
-        num_predict: 500,
+        temperature: options?.temperature ?? 0.1,
+        num_predict: 2048,
       },
     };
+
+    if (options?.responseSchema) {
+      body.format = options.responseSchema;
+    }
 
     log.debug('[Agent] LLM Request:', JSON.stringify(body, null, 2));
 
@@ -42,17 +52,17 @@ export class OllamaProvider implements LLMProvider {
 
       const data = (await response.json()) as {
         model: string;
-        response: string;
+        message: { role: string; content: string };
         done: boolean;
       };
 
       log.debug('[Agent] LLM Response:', JSON.stringify({
         model: data.model,
-        response: data.response,
+        message: data.message?.content,
         done: data.done,
       }, null, 2));
 
-      return data.response ?? '';
+      return data.message?.content ?? '';
 
     } catch (error) {
       if (error instanceof Error && error.name === 'AbortError') {

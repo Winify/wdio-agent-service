@@ -2,12 +2,9 @@ export const config: WebdriverIO.Config = {
 
   tsConfigPath: './tsconfig.json',
   specs: [
-    './test/specs/**/agent.spec.ts',
+    './test/specs/**/agentic.spec.ts',
   ],
-  // Patterns to exclude.
-  exclude: [
-    // 'path/to/excluded/files'
-  ],
+  exclude: [],
 
   maxInstances: 1,
 
@@ -29,9 +26,8 @@ export const config: WebdriverIO.Config = {
       provider: 'ollama',
       providerUrl: 'http://localhost:11434',
       model: 'qwen2.5-coder:3b',
-      maxActions: 2,
-      maxSteps: 1, // Single-pass mode (no agentic loop)
-      // maxSteps: 5, // Agentic loop mode
+      maxActions: 5,
+      maxSteps: 5, // Agentic loop mode
     }],
   ],
 
@@ -39,7 +35,7 @@ export const config: WebdriverIO.Config = {
   reporters: ['spec'],
   mochaOpts: {
     ui: 'bdd',
-    timeout: 60000,
+    timeout: 120000, // Higher timeout for multi-step agentic tests
   },
 
   injectGlobals: true,

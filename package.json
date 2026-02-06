@@ -30,6 +30,7 @@
     "postbuild": "npm pack",
     "prepare": "husky",
     "test:examples": "pnpm run build && cd examples && pnpm i && pnpm test",
+    "test:examples-agentic": "pnpm run build && cd examples && pnpm i && pnpm test:agentic",
     "test:examples-mobile": "pnpm run build && cd examples && pnpm i && pnpm test:mobile"
   },
   "license": "MIT",

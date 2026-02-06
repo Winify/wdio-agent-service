@@ -38,8 +38,8 @@ export const config: WebdriverIO.Config = {
         provider: 'ollama',
         providerUrl: 'http://localhost:11434',
         model: 'qwen2.5-coder:3b',
-        maxActions: 2,
-        debug: true,
+        maxActions: 5,
+        maxSteps: 1, // Agentic loop mode
       },
     ],
   ],
