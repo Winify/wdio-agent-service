@@ -4,7 +4,7 @@
     "type": "git",
     "url": "git://github.com/Winify/wdio-agent-service.git"
   },
-  "version": "0.0.1",
+  "version": "0.1.0",
   "author": "Vince Graics",
   "description": "WebdriverIO plugin for agentic browser actions. Integrates into WebdrverIO codebase/ecosystem.",
   "keywords": [
