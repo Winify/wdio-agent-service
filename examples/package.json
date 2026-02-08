@@ -3,7 +3,8 @@
   "version": "1.0.0",
   "type": "module",
   "scripts": {
-    "test": "wdio wdio.conf.ts"
+    "test": "wdio wdio.conf.ts",
+    "test:mobile": "wdio wdio.appium.conf.ts"
   },
   "devDependencies": {
     "@wdio/cli": "^9.22.0",
