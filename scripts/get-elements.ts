@@ -79,7 +79,9 @@ export async function getElements(
   const platform = detectPlatform(browser);
   const elements = await fetchElements(browser, platform, type);
 
-  log.warn(`[Agent] No elements found (platform: ${platform}, type: ${type})`);
+  if (elements?.length < 1) {
+    log.warn(`[Agent] No elements found (platform: ${platform}, type: ${type})`);
+  }
 
   if (toonFormat === 'yaml-like') {
     // Simplify to essential fields - produces YAML-like output, better for smaller models

@@ -7,9 +7,10 @@ describe('Mobile Agent', () => {
     await browser.agent('accept all cookies');
     await browser.agent('go to Account');
 
+    await browser.agent('open Login');
     await browser.agent('fill in admin into username field and password into password field');
 
-    const emailInputElement = $('android=new UiSelector().resourceId("uk.co.brightec.ziffit.dev:id/field_email")');
+    const emailInputElement = $('android=new UiSelector().resourceId("field_email")');
     await expect(emailInputElement).toHaveText('admin');
   });
 });
