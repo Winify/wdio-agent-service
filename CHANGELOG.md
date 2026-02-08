@@ -1,5 +1,7 @@
 # Changelog
 
+## [0.1.1](https://github.com/Winify/wdio-agent-service/compare/v0.1.0...v0.1.1) (2026-02-08)
+
 ## 0.1.0 (2026-02-08)
 
 ### Features
