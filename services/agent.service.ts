@@ -1,3 +1,4 @@
+import readline from 'node:readline';
 import type { Services } from '@wdio/types';
 import type { AgentAction, AgentServiceConfig, Platform } from '../types';
 import type { LLMProvider } from '../providers';
@@ -10,6 +11,11 @@ import { executeAgentAction } from '../commands/execute-agent-action';
 import logger from '@wdio/logger';
 
 const log = logger('wdio-agent-service');
+
+interface DebugAgentOptions {
+  commandTimeout?: number;
+  agent: boolean;
+}
 
 function detectPlatform(browser: WebdriverIO.Browser): Platform {
   if (browser.isIOS) {
@@ -55,6 +61,14 @@ export default class AgentService implements Services.ServiceInstance {
 
     });
 
+    browser.overwriteCommand('debug', (origDebug: (timeout?: number) => Promise<void | unknown>, optionsOrTimeout?: number | DebugAgentOptions) => {
+      if (typeof optionsOrTimeout === 'object' && optionsOrTimeout.agent) {
+        return runAgentRepl(browser, (prompt: string) => this.executeAgent(browser, prompt));
+      }
+      const timeout = typeof optionsOrTimeout === 'number' ? optionsOrTimeout : undefined;
+      return origDebug(timeout);
+    });
+
     log.debug('[Agent] Service initialized with config:', this.resolvedConfig);
   }
 
@@ -81,4 +95,45 @@ export default class AgentService implements Services.ServiceInstance {
 
     return actions;
   }
+}
+
+async function runAgentRepl(
+  browser: WebdriverIO.Browser,
+  executeAgent: (prompt: string) => Promise<AgentAction[]>,
+): Promise<void> {
+  const rl = readline.createInterface({
+    input: process.stdin,
+    output: process.stdout,
+    prompt: 'agent> ',
+  });
+
+  console.log('\n  Agent debug mode \u2014 type natural language commands');
+  console.log('  Type .exit to return to test execution\n');
+  rl.prompt();
+
+  return new Promise<void>((resolve) => {
+    rl.on('line', async (line: string) => {
+      const input = line.trim();
+      if (!input) {
+        rl.prompt();
+        return;
+      }
+      if (input === '.exit') {
+        rl.close();
+        return;
+      }
+
+      try {
+        const actions = await executeAgent(input);
+        for (const a of actions) {
+          const val = a.value ? ` = "${a.value}"` : '';
+          console.log(`  \u2713 ${a.type} "${a.target}"${val}`);
+        }
+      } catch (err) {
+        console.error(`  Error: ${err instanceof Error ? err.message : String(err)}`);
+      }
+      rl.prompt();
+    });
+    rl.on('close', resolve);
+  });
 }

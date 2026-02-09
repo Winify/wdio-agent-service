@@ -67,6 +67,12 @@ declare global {
        * @returns Result containing executed actions
        */
       agent: (prompt: string) => Promise<AgentAction[]>;
+
+      /**
+       * Extended by wdio-agent-service: pass { agent: true } to enter
+       * a natural language REPL instead of the default JS REPL.
+       */
+      debug: (optionsOrTimeout?: number | { commandTimeout?: number; agent?: boolean }) => Promise<void | unknown>;
     }
   }
 }
