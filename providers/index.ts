@@ -1,7 +1,14 @@
 import type { AgentServiceConfig, PromptInput } from '../types';
+import { AnthropicProvider } from './anthropic.provider';
+import { OpenAIProvider } from './openai.provider';
+import { OpenRouterProvider } from './openrouter.provider';
+import { GeminiProvider } from './gemini.provider';
 import { OllamaProvider } from './ollama.provider';
+import logger from '@wdio/logger';
 
-export type Providers = 'ollama';
+const log = logger('wdio-agent-service');
+
+export type Providers = 'ollama' | 'anthropic' | 'openai' | 'openrouter' | 'gemini';
 
 /**
  * LLM Provider Interface
@@ -12,6 +19,26 @@ export interface LLMProvider {
 }
 
 export function initializeProvider(config: AgentServiceConfig): LLMProvider {
-  // Add new providers here as needed
-  return new OllamaProvider(config);
+  if (config.send) {
+    if (config.provider) {
+      log.warn(`[Agent] Both 'send' override and 'provider: ${config.provider}' are set. The 'send' override takes priority.`);
+    }
+    return { send: config.send };
+  }
+
+  switch (config.provider) {
+    case 'anthropic':
+      return new AnthropicProvider(config);
+    case 'openai':
+      return new OpenAIProvider(config);
+    case 'openrouter':
+      return new OpenRouterProvider(config);
+    case 'gemini':
+      return new GeminiProvider(config);
+    case 'ollama':
+    case undefined:
+      return new OllamaProvider(config);
+    default:
+      throw new Error(`Unknown provider "${config.provider}". Supported: ollama, anthropic, openai, openrouter, gemini`);
+  }
 }
