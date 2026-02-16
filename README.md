@@ -54,14 +54,18 @@ export const config: WebdriverIO.Config = {
 
 ### Config Options
 
-| Option        | Type                       | Default                    | Description                                                                                                                |
-|---------------|----------------------------|----------------------------|----------------------------------------------------------------------------------------------------------------------------|
-| `provider`    | `'ollama'`                 | `'ollama'`                 | LLM provider                                                                                                               |
-| `providerUrl` | `string`                   | `'http://localhost:11434'` | Provider API endpoint                                                                                                      |
-| `model`       | `string`                   | `'qwen2.5-coder:7b'`       | Model name                                                                                                                 |
-| `maxActions`  | `number`                   | `1`                        | Maximum actions per prompt                                                                                                 |
-| `timeout`     | `number`                   | `30000`                    | Request timeout in ms                                                                                                      |
-| `toonFormat`  | `'yaml-like' \| 'tabular'` | `'yaml-like'`              | Element encoding format. `yaml-like` works better with smaller models, `tabular` is more token-efficient for larger models |
+| Option          | Type                                                          | Default              | Description                                                                                                                |
+|-----------------|---------------------------------------------------------------|----------------------|----------------------------------------------------------------------------------------------------------------------------|
+| `provider`      | `'ollama' \| 'anthropic' \| 'openai' \| 'openrouter' \| 'gemini'` | `'ollama'`           | LLM provider                                                                                                              |
+| `providerUrl`   | `string`                                                      | Depends on provider  | Provider API endpoint                                                                                                      |
+| `token`         | `string`                                                      | —                    | API token. Falls back to env vars (`ANTHROPIC_API_KEY`, `OPENAI_API_KEY`, `OPENROUTER_API_KEY`, `GEMINI_API_KEY`)          |
+| `model`         | `string`                                                      | Depends on provider  | Model name (see [Providers](#providers) below)                                                                             |
+| `maxActions`    | `number`                                                      | `1`                  | Maximum actions per prompt                                                                                                 |
+| `timeout`       | `number`                                                      | `30000`              | Request timeout in ms                                                                                                      |
+| `maxRetries`    | `number`                                                      | `2`                  | Max retry attempts on retryable errors (5xx, 429, network). Exponential backoff                                            |
+| `maxOutputTokens` | `number`                                                    | `1024`               | Maximum output tokens per LLM response                                                                                    |
+| `toonFormat`    | `'yaml-like' \| 'tabular'`                                    | `'yaml-like'`        | Element encoding format. `yaml-like` works better with smaller models, `tabular` is more token-efficient for larger models |
+| `send`          | `(prompt: PromptInput) => Promise<string>`                    | —                    | Override the built-in provider entirely. When set, `provider`/`providerUrl`/`token`/`model` are ignored                    |
 
 ## Usage
 
@@ -134,14 +138,56 @@ export const config: WebdriverIO.Config = {
 };
 ```
 
-## Local LLM Setup (Ollama)
+## Providers
+
+### Provider Defaults
+
+| Provider     | Default Model               | Default URL                                    | Token Env Var         |
+|--------------|-----------------------------|-------------------------------------------------|-----------------------|
+| `ollama`     | `qwen2.5-coder:3b`         | `http://localhost:11434`                        | —                     |
+| `anthropic`  | `claude-haiku-4-5-20251001` | `https://api.anthropic.com`                     | `ANTHROPIC_API_KEY`   |
+| `openai`     | `gpt-4o-mini`              | `https://api.openai.com`                        | `OPENAI_API_KEY`      |
+| `gemini`     | `gemini-2.0-flash`         | `https://generativelanguage.googleapis.com`     | `GEMINI_API_KEY`      |
+| `openrouter` | *(required)*               | `https://openrouter.ai/api`                     | `OPENROUTER_API_KEY`  |
+
+Cloud providers (anthropic, openai, gemini, openrouter) require an API token via `token` config or the corresponding env var. OpenRouter additionally requires an explicit `model`.
+
+### Using a Cloud Provider
+
+```ts
+services: [
+  ['agent', {
+    provider: 'anthropic',
+    // token defaults to ANTHROPIC_API_KEY env var
+    maxActions: 3,
+  }]
+],
+```
+
+### Using a Custom `send` Function
+
+You can bypass the built-in providers entirely by supplying a `send` function:
+
+```ts
+services: [
+  ['agent', {
+    send: async ({ system, user }) => {
+      const response = await myCustomLlm({ system, user });
+      return response.text;
+    },
+    maxActions: 2,
+  }]
+],
+```
+
+### Local LLM Setup (Ollama)
 
 1. Install [Ollama](https://ollama.ai)
 2. Pull a model: `ollama pull qwen2.5-coder:3b`
 3. Run `ollama serve` in the terminal
 4. Ollama runs on `http://localhost:11434` by default
 
-### Recommended Models
+#### Recommended Ollama Models
 
 | Model               | Size  | Speed   | Accuracy |
 |---------------------|-------|---------|----------|
