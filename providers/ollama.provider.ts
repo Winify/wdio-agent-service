@@ -1,66 +1,40 @@
 import type { AgentServiceConfig, PromptInput } from '../types';
-import type { LLMProvider } from './index';
-import logger from '@wdio/logger';
+import { BaseProvider } from './base.provider.ts';
 
-const log = logger('wdio-agent-service');
+export class OllamaProvider extends BaseProvider {
 
-export class OllamaProvider implements LLMProvider {
-
-  constructor(private config: AgentServiceConfig) {
+  constructor(config: AgentServiceConfig) {
+    super(config, {
+      model: 'qwen2.5-coder:3b',
+      providerUrl: 'http://localhost:11434',
+    });
   }
 
-  async send(prompt: PromptInput): Promise<string> {
-    const url = `${this.config.providerUrl}/api/generate`;
+  getEndpointUrl(): string {
+    return `${this.providerUrl}/api/chat`;
+  }
 
-    const body = {
-      model: this.config.model,
-      prompt: `${prompt.system}\n\n${prompt.user}`,
+  getHeaders(): Record<string, string> {
+    return {};
+  }
+
+  buildRequestBody(prompt: PromptInput): Record<string, unknown> {
+    return {
+      model: this.model,
+      messages: [
+        { role: 'system', content: prompt.system },
+        { role: 'user', content: prompt.user },
+      ],
       stream: false,
       options: {
         temperature: 0.1,
-        num_predict: 500,
+        num_predict: this.maxOutputTokens,
       },
     };
+  }
 
-    log.debug('[Agent] LLM Request:', JSON.stringify(body, null, 2));
-
-    const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), this.config.timeout);
-
-    try {
-      const response = await fetch(url, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(body),
-        signal: controller.signal,
-      });
-
-      if (!response.ok) {
-        const errorText = await response.text();
-        throw new Error(`Ollama request failed: ${response.status} ${response.statusText} - ${errorText}`);
-      }
-
-      const data = (await response.json()) as {
-        model: string;
-        response: string;
-        done: boolean;
-      };
-
-      log.debug('[Agent] LLM Response:', JSON.stringify({
-        model: data.model,
-        response: data.response,
-        done: data.done,
-      }, null, 2));
-
-      return data.response ?? '';
-
-    } catch (error) {
-      if (error instanceof Error && error.name === 'AbortError') {
-        throw new Error(`Ollama request timed out after ${this.config.timeout}ms`);
-      }
-      throw error;
-    } finally {
-      clearTimeout(timeoutId);
-    }
+  extractResponse(data: unknown): string {
+    const d = data as { message: { content: string } };
+    return d.message?.content ?? '';
   }
 }

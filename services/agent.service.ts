@@ -33,9 +33,7 @@ export default class AgentService implements Services.ServiceInstance {
 
   constructor(serviceOptions: AgentServiceConfig = {}) {
     this.resolvedConfig = {
-      provider: serviceOptions.provider ?? 'ollama',
-      providerUrl: serviceOptions.providerUrl ?? 'http://localhost:11434',
-      model: serviceOptions.model ?? 'qwen2.5-coder:7b',
+      ...serviceOptions,
       maxActions: serviceOptions.maxActions ?? 1,
       timeout: serviceOptions.timeout ?? 30000,
       toonFormat: serviceOptions.toonFormat ?? 'yaml-like',

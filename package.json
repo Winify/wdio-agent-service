@@ -25,6 +25,8 @@
     "README.md"
   ],
   "scripts": {
+    "test": "vitest run",
+    "test:watch": "vitest",
     "lint": "eslint --fix && tsc --noEmit",
     "build": "rimraf build && tsup",
     "postbuild": "npm pack",
@@ -52,6 +54,7 @@
     "rimraf": "^6.1.2",
     "tsup": "^8.5.1",
     "typescript": "^5.9.3",
+    "vitest": "^4.0.18",
     "webdriverio": "^9.23.2"
   },
   "peerDependencies": {
