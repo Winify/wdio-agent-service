@@ -41,7 +41,13 @@ export function resolveLlmConfig(config: AgentServiceConfig): LLMProvider {
     };
   }
 
-  const schema: Schema = config.schema ?? 'openai';
+  // Deprecated: accept `provider` as alias for `schema`
+  let schema: Schema = config.schema ?? 'openai';
+  const legacyProvider = (config as Record<string, unknown>)['provider'];
+  if (legacyProvider && !config.schema) {
+    log.warn(`[Agent] 'provider' is deprecated, use 'schema' instead. Mapping provider "${legacyProvider}" → schema.`);
+    schema = legacyProvider === 'anthropic' ? 'anthropic' : 'openai';
+  }
 
   // Sensible defaults per schema
   const endpoint = config.providerUrl
@@ -108,7 +114,8 @@ async function chatRequest(
 function buildUrl(cfg: ResolvedConfig): string {
   const endpoint = cfg.endpoint.replace(/\/+$/, '');
   if (cfg.schema === 'anthropic') {
-    return endpoint.endsWith('/v1/messages') ? endpoint : `${endpoint}/v1/messages`;
+    if (endpoint.endsWith('/v1/messages')) return endpoint;
+    return endpoint.endsWith('/v1') ? `${endpoint}/messages` : `${endpoint}/v1/messages`;
   }
   // Ollama's native endpoint differs from OpenAI Chat Completions. Do not use
   // hostnames to infer it: LM Studio and other OpenAI-compatible servers are
@@ -126,7 +133,11 @@ function buildHeaders(cfg: ResolvedConfig): Record<string, string> {
   const headers: Record<string, string> = { 'Content-Type': 'application/json' };
 
   if (cfg.schema === 'anthropic') {
-    headers['x-api-key'] = cfg.apiKey ?? '';
+    if (cfg.apiKey) {
+      headers['x-api-key'] = cfg.apiKey;
+    } else {
+      log.warn('[Agent] No API key configured for Anthropic — requests may fail with 401');
+    }
     headers['anthropic-version'] = '2023-06-01';
   } else if (cfg.apiKey) {
     headers['Authorization'] = `Bearer ${cfg.apiKey}`;
@@ -143,6 +154,9 @@ function buildRequestBody(
   opts?: LLMProviderOptions,
 ): Record<string, unknown> {
   if (cfg.schema === 'anthropic') {
+    if (opts?.responseSchema) {
+      log.warn('[Agent] responseSchema is not supported for Anthropic schema — ignored');
+    }
     const systemMsg = messages.find(m => m.role === 'system');
     const nonSystem = messages.filter(m => m.role !== 'system').map(m => ({
       role: m.role,
@@ -188,6 +202,8 @@ function isOllamaEndpoint(endpoint: string): boolean {
   const normalized = endpoint.replace(/\/+$/, '');
   return normalized === 'http://localhost:11434'
     || normalized === 'http://127.0.0.1:11434'
+    || normalized === 'http://0.0.0.0:11434'
+    || normalized === 'http://[::1]:11434'
     || normalized.endsWith('/api/chat');
 }
 

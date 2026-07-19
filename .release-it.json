@@ -18,7 +18,10 @@
           { "type": "feat", "section": "Features" },
           { "type": "fix", "section": "Bug Fixes" },
           { "type": "perf", "section": "Performance" },
-          { "type": "refactor", "section": "Refactoring" }
+          { "type": "refactor", "section": "Refactoring" },
+          { "type": "chore", "section": "Chores", "hidden": true },
+          { "type": "docs", "section": "Documentation", "hidden": true },
+          { "type": "test", "section": "Tests", "hidden": true }
         ]
       },
       "infile": "CHANGELOG.md",

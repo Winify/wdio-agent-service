@@ -25,8 +25,8 @@ function trimSnapshot(snapshot: SnapshotResult, limit: number): SnapshotResult {
       const id = eMatch[1];
       if (snapshot.elements[id]) {
         trimmedElements[id] = snapshot.elements[id];
+        count++;
       }
-      count++;
     }
     trimmed.push(line);
   }

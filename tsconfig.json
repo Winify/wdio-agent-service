@@ -139,6 +139,6 @@
   "exclude": [
     "node_modules",
     "build",
-    "sandbox"
+    "examples"
   ]
 }

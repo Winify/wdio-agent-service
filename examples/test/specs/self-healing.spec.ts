@@ -83,13 +83,13 @@ describe('Use Case 2: Self-healing when selectors break', () => {
       }
 
       // After the healing attempt, check the report for the event
-      const report = await browser.getHealingReport!();
+      const report = await browser.getHealingReport?.() ?? { totalEvents: 0, fixableCount: 0, manualReviewCount: 0, events: [] };
 
       // At minimum, the healer should have tried
       expect(report.totalEvents).toBeGreaterThanOrEqual(1);
 
       // Print prescriptive healing summary — shows what should be fixed
-      const healingSummary = await browser.getHealingReport!();
+      const healingSummary = await browser.getHealingReport?.() ?? { totalEvents: 0, fixableCount: 0, manualReviewCount: 0, events: [] };
       console.log(`\n[Healing] ${healingSummary.fixableCount} selector(s) can be fixed automatically, ${healingSummary.manualReviewCount} need(s) manual review`);
       for (const event of healingSummary.events) {
         if (event.fixable) {

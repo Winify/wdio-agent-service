@@ -18,7 +18,7 @@ export async function healSelector(
   brokenSelector: string,
   actionType: string,
   send: (prompt: PromptInput) => Promise<string>,
-  maxAttempts: number = 2,
+  maxAttempts: number = 1,
 ): Promise<string | null> {
   for (let attempt = 0; attempt < maxAttempts; attempt++) {
     try {
@@ -93,7 +93,7 @@ interface HealingResponse {
 function parseHealingResponse(raw: string): HealingResponse | null {
   // Strip thinking blocks and markdown fences
   const cleaned = raw
-    .replace(/<think>[\s\S]*?<\/think>/g, '')
+    .replace(/<think>[\s\S]*?<\/think>/gi, '')
     .replace(/```(?:json)?\s*/gi, '')
     .replace(/```\s*$/g, '')
     .trim();

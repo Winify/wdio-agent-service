@@ -27,6 +27,6 @@
   "include": [
     "test",
     "wdio.conf.ts",
-    "wdio.agentic.conf.ts"
+    "wdio.appium.conf.ts"
   ]
 }

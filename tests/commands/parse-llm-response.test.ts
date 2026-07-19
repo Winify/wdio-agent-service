@@ -29,6 +29,12 @@ describe('parseLlmResponse', () => {
     expect(result).toHaveLength(1);
   });
 
+  it('strips case-insensitive <THINK> blocks', () => {
+    const result = parseLlmResponse('<THINK>reasoning here</THINK>\n[{"action":"CLICK","target":"e1"}]', 5);
+    expect(result).toHaveLength(1);
+    expect(result[0].type).toBe('CLICK');
+  });
+
   it('uses fast path for direct JSON arrays', () => {
     const result = parseLlmResponse('[{"action":"NAVIGATE","target":"https://example.com"}]', 5);
     expect(result[0].type).toBe('NAVIGATE');
@@ -136,6 +142,29 @@ describe('parseAgentStep', () => {
 
   it('throws on non-JSON response', () => {
     expect(() => parseAgentStep('just some text')).toThrow('No JSON object found');
+  });
+
+  it('throws descriptive error when action field is missing (not TypeError)', () => {
+    expect(() =>
+      parseAgentStep(JSON.stringify({
+        actions: [{ target: 'e1' }],
+        done: false,
+      })),
+    ).toThrow('missing "action" field');
+  });
+
+  it('strips <THINK> blocks case-insensitively', () => {
+    const result = parseAgentStep('<THINK>\nreasoning\n</THINK>\n' + JSON.stringify({
+      actions: [{ action: 'CLICK', target: 'e1' }],
+      done: false,
+    }));
+    expect(result.actions).toHaveLength(1);
+  });
+
+  it('strips /* block comments */ from JSON', () => {
+    const result = parseAgentStep('{/* reasoning */\n"actions":[{"action":"CLICK","target":"e1"}],"done":false}');
+    expect(result.actions).toHaveLength(1);
+    expect(result.done).toBe(false);
   });
 });
 

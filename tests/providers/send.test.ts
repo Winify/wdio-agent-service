@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { resolveLlmConfig } from '../../providers/send.ts';
+import type { AgentServiceConfig } from '../../types/index.js';
 
 const { mockWarn, mockInfo, mockDebug } = vi.hoisted(() => ({
   mockWarn: vi.fn(),
@@ -129,6 +130,21 @@ describe('resolveLlmConfig', () => {
       expect(body.model).toBe('claude-opus-4-8');
     });
 
+    it('avoids double /v1 when endpoint already has /v1 suffix', async () => {
+      mockFetch.mockResolvedValueOnce(createResponse(200, { content: [{ text: 'ok' }] }));
+
+      const provider = resolveLlmConfig({
+        schema: 'anthropic',
+        token: 'tk',
+        providerUrl: 'https://api.anthropic.com/v1',
+      });
+      await provider.send({ system: 's', user: 'u' });
+
+      const call = mockFetch.mock.calls[0];
+      // Must not produce /v1/v1/messages
+      expect(call[0]).toBe('https://api.anthropic.com/v1/messages');
+    });
+
     it('handles multi-turn chat() correctly', async () => {
       mockFetch.mockResolvedValueOnce(createResponse(200, { content: [{ text: 'second response' }] }));
 
@@ -148,6 +164,32 @@ describe('resolveLlmConfig', () => {
         { role: 'assistant', content: 'first response' },
         { role: 'user', content: 'second message' },
       ]);
+    });
+
+    it('warns when no API key is configured', async () => {
+      delete process.env.ANTHROPIC_API_KEY;
+      delete process.env.ANTHROPIC_AUTH_TOKEN;
+      mockFetch.mockResolvedValueOnce(createResponse(200, { content: [{ text: 'ok' }] }));
+
+      const provider = resolveLlmConfig({ schema: 'anthropic' });
+      await provider.send({ system: 's', user: 'u' });
+
+      const headers = mockFetch.mock.calls[0][1].headers;
+      expect(headers['x-api-key']).toBeUndefined();
+      expect(mockWarn).toHaveBeenCalledWith(
+        expect.stringContaining('No API key configured for Anthropic'),
+      );
+    });
+
+    it('warns when responseSchema is passed for Anthropic', async () => {
+      mockFetch.mockResolvedValueOnce(createResponse(200, { content: [{ text: 'ok' }] }));
+
+      const provider = resolveLlmConfig({ schema: 'anthropic', token: 'tk' });
+      await provider.send({ system: 's', user: 'u' }, { responseSchema: { type: 'object' } });
+
+      expect(mockWarn).toHaveBeenCalledWith(
+        expect.stringContaining('responseSchema is not supported for Anthropic'),
+      );
     });
   });
 
@@ -243,6 +285,26 @@ describe('resolveLlmConfig', () => {
       expect(call[0]).toBe('http://localhost:11434/api/chat');
     });
 
+    it('detects 0.0.0.0:11434 as Ollama (Docker bind)', async () => {
+      mockFetch.mockResolvedValueOnce(createResponse(200, { message: { content: 'ok' } }));
+
+      const provider = resolveLlmConfig({ schema: 'openai', providerUrl: 'http://0.0.0.0:11434' });
+      await provider.send({ system: 's', user: 'u' });
+
+      const call = mockFetch.mock.calls[0];
+      expect(call[0]).toBe('http://0.0.0.0:11434/api/chat');
+    });
+
+    it('detects [::1]:11434 as Ollama (IPv6)', async () => {
+      mockFetch.mockResolvedValueOnce(createResponse(200, { message: { content: 'ok' } }));
+
+      const provider = resolveLlmConfig({ schema: 'openai', providerUrl: 'http://[::1]:11434' });
+      await provider.send({ system: 's', user: 'u' });
+
+      const call = mockFetch.mock.calls[0];
+      expect(call[0]).toBe('http://[::1]:11434/api/chat');
+    });
+
     it('uses OpenAI Chat Completions for a tokenless local OpenAI-compatible endpoint', async () => {
       mockFetch.mockResolvedValueOnce(createResponse(200, {
         choices: [{ message: { content: 'LM Studio response' } }],
@@ -256,6 +318,80 @@ describe('resolveLlmConfig', () => {
       const body = JSON.parse(call[1].body);
       expect(body.max_tokens).toBe(1024);
       expect(body.options).toBeUndefined();
+    });
+
+    it('routes bare LM Studio URL to /v1/chat/completions', async () => {
+      mockFetch.mockResolvedValueOnce(createResponse(200, {
+        choices: [{ message: { content: 'ok' } }],
+      }));
+
+      const provider = resolveLlmConfig({ schema: 'openai', providerUrl: 'http://localhost:1234' });
+      await provider.send({ system: 's', user: 'u' });
+
+      const call = mockFetch.mock.calls[0];
+      expect(call[0]).toBe('http://localhost:1234/v1/chat/completions');
+    });
+
+    it('routes localhost:8080 to /v1/chat/completions not ollama', async () => {
+      mockFetch.mockResolvedValueOnce(createResponse(200, {
+        choices: [{ message: { content: 'ok' } }],
+      }));
+
+      const provider = resolveLlmConfig({ schema: 'openai', providerUrl: 'http://localhost:8080' });
+      await provider.send({ system: 's', user: 'u' });
+
+      const call = mockFetch.mock.calls[0];
+      // Must NOT be /api/chat (Ollama) — only port 11434 gets that
+      expect(call[0]).toBe('http://localhost:8080/v1/chat/completions');
+    });
+  });
+
+  // ── Deprecated provider compat ────────────────────────────────
+
+  describe('deprecated provider config', () => {
+    it('maps provider: "anthropic" to schema: "anthropic"', async () => {
+      mockFetch.mockResolvedValueOnce(createResponse(200, { content: [{ text: 'ok' }] }));
+
+      const provider = resolveLlmConfig({ provider: 'anthropic', token: 'tk' } as unknown as AgentServiceConfig);
+      await provider.send({ system: 's', user: 'u' });
+
+      const call = mockFetch.mock.calls[0];
+      expect(call[0]).toBe('https://api.anthropic.com/v1/messages');
+      expect(mockWarn).toHaveBeenCalledWith(expect.stringContaining("'provider' is deprecated"));
+    });
+
+    it('maps provider: "openai" to schema: "openai"', async () => {
+      mockFetch.mockResolvedValueOnce(createResponse(200, {
+        choices: [{ message: { content: 'ok' } }],
+      }));
+
+      const provider = resolveLlmConfig({ provider: 'openai', providerUrl: 'https://api.openai.com', token: 'tk' } as unknown as AgentServiceConfig);
+      await provider.send({ system: 's', user: 'u' });
+
+      const call = mockFetch.mock.calls[0];
+      expect(call[0]).toBe('https://api.openai.com/v1/chat/completions');
+    });
+
+    it('maps provider: "ollama" to schema: "openai"', async () => {
+      mockFetch.mockResolvedValueOnce(createResponse(200, { message: { content: 'ok' } }));
+
+      const provider = resolveLlmConfig({ provider: 'ollama' } as unknown as AgentServiceConfig);
+      await provider.send({ system: 's', user: 'u' });
+
+      const call = mockFetch.mock.calls[0];
+      expect(call[0]).toBe('http://localhost:11434/api/chat');
+    });
+
+    it('schema takes priority over deprecated provider', async () => {
+      mockFetch.mockResolvedValueOnce(createResponse(200, { content: [{ text: 'ok' }] }));
+
+      const provider = resolveLlmConfig({ schema: 'anthropic', provider: 'openai', token: 'tk' } as unknown as AgentServiceConfig);
+      await provider.send({ system: 's', user: 'u' });
+
+      const call = mockFetch.mock.calls[0];
+      // schema wins — should go to anthropic endpoint, not openai
+      expect(call[0]).toBe('https://api.anthropic.com/v1/messages');
+      // No deprecation warning since schema was explicitly set
     });
   });
 

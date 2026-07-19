@@ -30,13 +30,16 @@ export interface HealConfig {
   enabled: boolean;
   /** Commands to intercept for healing. Default: ['click', 'setValue', 'tap'] */
   commands: ('click' | 'setValue' | 'tap')[];
-  /** Max healing attempts per command. Default: 2 */
+  /** Max healing attempts per command. Default: 1 */
   maxAttempts: number;
 }
 
 export interface AgentServiceConfig {
   /** API schema format. 'openai' works with Ollama, LM Studio, OpenRouter, etc. Default: 'openai' */
   schema?: ProviderSchema;
+
+  /** @deprecated Use `schema` instead. Mapped automatically with a warning. */
+  provider?: string;
 
   /** LLM API endpoint base URL. Default: http://localhost:11434 */
   providerUrl?: string;

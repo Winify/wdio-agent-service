@@ -19,8 +19,8 @@ importers:
         specifier: ^10.0.5
         version: 10.0.5(conventional-commits-filter@5.0.0)(conventional-commits-parser@6.2.1)(release-it@19.2.4(@types/node@24.10.9))
       '@wdio/elements':
-        specifier: file:../devtools/packages/elements
-        version: file:../devtools/packages/elements(webdriverio@9.23.2(puppeteer-core@24.37.1))
+        specifier: ^1.1.0
+        version: 1.1.0(webdriverio@9.23.2(puppeteer-core@24.37.1))
       '@wdio/eslint':
         specifier: ^0.1.3
         version: 0.1.3(@typescript-eslint/eslint-plugin@8.54.0(@typescript-eslint/parser@8.54.0(eslint@9.39.2(jiti@2.6.1))(typescript@5.9.3))(eslint@9.39.2(jiti@2.6.1))(typescript@5.9.3))(eslint@9.39.2(jiti@2.6.1))(typescript@5.9.3)
@@ -917,8 +917,8 @@ packages:
     resolution: {integrity: sha512-3+5y7P4GS7UTIgr6zPhxKHMmDSwiNjgdwnWIUYXr2eQLcpnPGhc9GL1IEDgQEAcziXG9BfaKzZQHi+vH89PR5w==}
     engines: {node: '>=18.20.0'}
 
-  '@wdio/elements@file:../devtools/packages/elements':
-    resolution: {directory: ../devtools/packages/elements, type: directory}
+  '@wdio/elements@1.1.0':
+    resolution: {integrity: sha512-wfUDycetTDvX6COluvUz64NMksUjeJCrwNvWbUS0MEVb23/ip5sP6q2bVyg7PyGMEh+dBQHHjAVrZkyuiMCFqw==}
     peerDependencies:
       webdriverio: ^9.0.0
 
@@ -4215,7 +4215,7 @@ snapshots:
       '@wdio/types': 9.23.2
       chalk: 5.6.2
 
-  '@wdio/elements@file:../devtools/packages/elements(webdriverio@9.23.2(puppeteer-core@24.37.1))':
+  '@wdio/elements@1.1.0(webdriverio@9.23.2(puppeteer-core@24.37.1))':
     dependencies:
       '@xmldom/xmldom': 0.9.10
       webdriverio: 9.23.2(puppeteer-core@24.37.1)

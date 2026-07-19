@@ -15,7 +15,7 @@ import { buildAgenticPrompt, buildObservationMessage, buildPrompt } from '../pro
 import { parseAgentStep, parseLlmResponse, resolveActionTargets } from '../commands/parse-llm-response';
 import { executeAgentAction } from '../commands/execute-agent-action';
 import { installInterceptors } from '../healing/interceptor';
-import { healingReport } from '../healing/report';
+import { healingReport, formatHealingSummary } from '../healing/report';
 import logger from '@wdio/logger';
 
 const log = logger('wdio-agent-service');
@@ -129,7 +129,7 @@ export default class AgentService implements Services.ServiceInstance {
       results.push(result);
       // In single-pass mode, throw on failure for backward compat
       if (!result.success) {
-        throw new Error(`Action ${result.action.type} "${result.action.target}" failed: ${result.error}`);
+        throw new Error(`Action ${result.action.type} "${result.action.target}" failed: ${result.error ?? 'unknown error'}`);
       }
     }
 
@@ -155,6 +155,7 @@ export default class AgentService implements Services.ServiceInstance {
     maxActions: number,
   ): Promise<AgentResult> {
     const contextWindow = this.resolvedConfig.contextWindow!;
+    const MAX_CONSECUTIVE_PARSE_ERRORS = 3;
 
     log.info(`[Agent] Agentic loop mode (maxSteps: ${maxSteps})`);
 
@@ -175,10 +176,10 @@ export default class AgentService implements Services.ServiceInstance {
     const allSteps: AgentResult['steps'] = [];
     let done = false;
     let step = 0;
+    let parseErrors = 0;
 
     while (!done && step < maxSteps) {
-      step++;
-      log.info(`[Agent] Step ${step}/${maxSteps} — sending to LLM...`);
+      log.info(`[Agent] Step ${step + 1}/${maxSteps} — sending to LLM...`);
 
       // Get LLM response
       const response = await this.provider.chat(messages);
@@ -186,9 +187,14 @@ export default class AgentService implements Services.ServiceInstance {
       let agentStep;
       try {
         agentStep = parseAgentStep(response);
+        parseErrors = 0;   // reset on successful parse
+        step++;             // only count steps that produced parseable output
       } catch (parseError) {
-        // Model returned unparseable output — feed the error back and let it retry
-        log.warn(`[Agent] Step ${step}: parse error — ${(parseError as Error).message}`);
+        parseErrors++;
+        if (parseErrors >= MAX_CONSECUTIVE_PARSE_ERRORS) {
+          throw new Error(`Agentic loop aborted: ${parseErrors} consecutive parse errors. Last error: ${(parseError as Error).message}`);
+        }
+        log.warn(`[Agent] Parse error ${parseErrors}/${MAX_CONSECUTIVE_PARSE_ERRORS}: ${(parseError as Error).message}`);
         messages.push({ role: 'assistant', content: response });
         messages.push({
           role: 'user',
@@ -257,25 +263,15 @@ export default class AgentService implements Services.ServiceInstance {
   ): void {
     if (!this.resolvedConfig.autoHeal?.enabled) return;
 
-    const report = healingReport.getReport();
-    if (report.totalEvents === 0) return;
+    try {
+      const report = healingReport.getReport();
+      if (report.totalEvents === 0) return;
 
-    log.error(
-      `\n[Healing] ${report.fixableCount} selector(s) can be fixed automatically, ` +
-      `${report.manualReviewCount} need(s) manual review`,
-    );
-
-    for (const event of report.events) {
-      if (event.fixable) {
-        log.error(`[Healing]   FIX: ${event.command}  "${event.originalSelector}" → "${event.healedSelector}"`);
-      } else {
-        log.error(`[Healing]   MANUAL: ${event.command} "${event.originalSelector}" — ${event.suggestion || 'needs investigation'}`);
-      }
+      log.error(formatHealingSummary(report));
+    } catch (err) {
+      log.error('[Healing] Failed to generate healing report:', (err as Error).message);
     }
 
-    healingReport.clear();
-
-    // Clear for next suite
     healingReport.clear();
   }
 

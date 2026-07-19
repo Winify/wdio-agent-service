@@ -5,7 +5,7 @@ import { VALID_ACTIONS } from '../types';
  * Strip thinking blocks from model responses (e.g. qwen3 `<think>...</think>`).
  */
 function stripThinkingBlocks(text: string): string {
-  return text.replace(/<think>[\s\S]*?<\/think>/g, '').trim();
+  return text.replace(/<think>[\s\S]*?<\/think>/gi, '').trim();
 }
 
 /**
@@ -36,6 +36,16 @@ function stripJsonComments(text: string): string {
     if (ch === '"') {
       inString = !inString;
       result += ch;
+      continue;
+    }
+
+    // Outside a string: check for /* */ block comment
+    if (!inString && ch === '/' && text[i + 1] === '*') {
+      i += 2; // skip /*
+      while (i < text.length && !(text[i] === '*' && text[i + 1] === '/')) {
+        i++;
+      }
+      i++; // skip the closing /
       continue;
     }
 
@@ -137,6 +147,11 @@ function buildAgentStep(raw: { actions?: LlmProposedAction[]; done?: boolean; re
   let done = Boolean(raw.done);
 
   for (const [i, a] of (raw.actions ?? []).entries()) {
+    if (!a.action || typeof a.action !== 'string') {
+      // Let validateAction produce the descriptive error
+      actions.push(validateAction(a, i));
+      continue;
+    }
     const actionType = a.action.toUpperCase();
     if (actionType === 'DONE' || actionType === 'COMPLETE' || actionType === 'FINISH') {
       // Model signaled completion via a pseudo-action instead of done flag

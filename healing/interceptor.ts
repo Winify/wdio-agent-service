@@ -49,7 +49,7 @@ export function installInterceptors(
     return undefined;
   }
 
-  const maxAttempts = config.maxAttempts ?? 2;
+  const maxAttempts = config.maxAttempts ?? 1;
 
   // Install interceptor for each configured command
   for (const command of config.commands) {
