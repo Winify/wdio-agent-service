@@ -1,9 +1,8 @@
 import type { Services } from '@wdio/types';
-import type { AgentAction, AgentServiceConfig, Platform } from '../types';
-import type { LLMProvider } from '../providers';
+import type { AgentResult, AgentServiceConfig, LLMProvider, Platform } from '../types';
 import 'webdriverio';
 import { initializeProvider } from '../providers';
-import { getElements } from '../scripts/get-elements';
+import { getSnapshot } from '../scripts/get-snapshot';
 import { buildPrompt } from '../prompts';
 import { parseLlmResponse } from '../commands/parse-llm-response';
 import { executeAgentAction } from '../commands/execute-agent-action';
@@ -36,7 +35,8 @@ export default class AgentService implements Services.ServiceInstance {
       ...serviceOptions,
       maxActions: serviceOptions.maxActions ?? 1,
       timeout: serviceOptions.timeout ?? 30000,
-      toonFormat: serviceOptions.toonFormat ?? 'yaml-like',
+      maxSteps: serviceOptions.maxSteps ?? 1,
+      contextWindow: serviceOptions.contextWindow ?? 3,
     };
   }
 
@@ -49,23 +49,19 @@ export default class AgentService implements Services.ServiceInstance {
 
     this.provider = initializeProvider(this.resolvedConfig);
 
-    browser.addCommand('agent', async (prompt: string): Promise<AgentAction[]> => this.executeAgent(browser, prompt), {
-
-    });
+    browser.addCommand('agent', async (prompt: string): Promise<AgentResult> => this.executeAgent(browser, prompt));
 
     log.debug('[Agent] Service initialized with config:', this.resolvedConfig);
   }
 
-  private async executeAgent(_browser: WebdriverIO.Browser, prompt: string): Promise<AgentAction[]> {
+  private async executeAgent(_browser: WebdriverIO.Browser, prompt: string): Promise<AgentResult> {
     const platform = detectPlatform(_browser);
 
     log.debug(`[Agent] Processing prompt: "${prompt}" (platform: ${platform})`);
 
-    const elements = await getElements(_browser, { toonFormat: this.resolvedConfig.toonFormat });
+    const snapshot = await getSnapshot(_browser);
 
-    log.debug(`[Agent] Found ${elements.slice(1, elements.indexOf(']'))} visible elements`);
-
-    const llmPrompt = buildPrompt(elements, prompt, this.maxActions, platform);
+    const llmPrompt = buildPrompt(snapshot.text, prompt, this.maxActions, platform);
 
     const response = await this.provider.send(llmPrompt);
 
@@ -77,6 +73,11 @@ export default class AgentService implements Services.ServiceInstance {
       await executeAgentAction(_browser, action);
     }
 
-    return actions;
+    return {
+      actions,
+      steps: [{ step: 1, actions: actions.map(a => ({ action: a, success: true })), done: true }],
+      goalAchieved: true,
+      totalSteps: 1,
+    };
   }
 }
