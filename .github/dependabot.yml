@@ -1,0 +1,74 @@
+version: 2
+updates:
+  - package-ecosystem: npm
+    directory: "/"
+    schedule:
+      interval: weekly
+      day: monday
+      time: "11:00"
+    open-pull-requests-limit: 10
+    versioning-strategy: increase-if-necessary
+    labels:
+      - dependencies
+    commit-message:
+      prefix: "chore(deps): "
+      prefix-development: "chore(deps-dev): "
+    ignore:
+      # Node.js updates require changes to .nvmrc
+      - dependency-name: "@types/node"
+    groups:
+      patch-deps-updates-main:
+        update-types:
+          - "patch"
+      minor-deps-updates-main:
+        update-types:
+          - "minor"
+      major-deps-updates-main:
+        update-types:
+          - "major"
+
+  - package-ecosystem: npm
+    directory: "/examples"
+    schedule:
+      interval: weekly
+      day: monday
+      time: "11:00"
+    open-pull-requests-limit: 10
+    versioning-strategy: increase-if-necessary
+    labels:
+      - dependencies
+    commit-message:
+      prefix: "chore(deps): "
+      prefix-development: "chore(deps-dev): "
+    groups:
+      patch-deps-updates-examples:
+        update-types:
+          - "patch"
+      minor-deps-updates-examples:
+        update-types:
+          - "minor"
+      major-deps-updates-examples:
+        update-types:
+          - "major"
+
+  - package-ecosystem: github-actions
+    directory: "/"
+    schedule:
+      interval: weekly
+      day: monday
+      time: "11:00"
+    open-pull-requests-limit: 10
+    labels:
+      - dependencies
+    commit-message:
+      prefix: "chore(ci): "
+    groups:
+      patch-deps-updates:
+        update-types:
+          - "patch"
+      minor-deps-updates:
+        update-types:
+          - "minor"
+      major-deps-updates:
+        update-types:
+          - "major"
