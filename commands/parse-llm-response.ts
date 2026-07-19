@@ -65,6 +65,9 @@ interface LlmProposedAction {
 }
 
 function validateAction(action: LlmProposedAction, index: number): AgentAction {
+  if (!action || typeof action.action !== 'string') {
+    throw new Error(`Invalid action at index ${index}: missing "action" field`);
+  }
   const actionType = action.action.toUpperCase() as ActionType;
   if (!VALID_ACTIONS.includes(actionType)) {
     throw new Error(`Invalid action type "${actionType}" at index ${index}. Valid: ${VALID_ACTIONS.join(', ')}`);
@@ -197,9 +200,12 @@ export const parseAgentStep = (response: string): AgentStep => {
  * Falls back to returning the input unchanged (for NAVIGATE URLs, raw selectors).
  */
 export function resolveTarget(
-  target: string,
+  target: unknown,
   elements: Record<string, { selector: string; qualifiedSelector?: string }>,
 ): string {
+  if (typeof target !== 'string') {
+    return String(target ?? '');
+  }
   const match = target.match(/^e(\d+)$/i);
   if (match) {
     const key = `e${match[1]}`;

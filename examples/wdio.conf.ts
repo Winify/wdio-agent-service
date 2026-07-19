@@ -27,7 +27,8 @@ export const config: WebdriverIO.Config = {
       providerUrl: 'http://100.69.254.5:1234',   // LM Studio, Ollama, OpenAI, etc.
       model: 'qwen/qwen3.5-4b',                  // model name
       maxActions: 3,                             // max actions per LLM response
-      maxSteps: 4,                               // 1 = single-pass, >1 = ReAct loop
+      maxSteps: 1,                               // default: single-pass (fast). >1 = ReAct loop
+      timeout: 15000,                            // LLM request timeout (ms)
       contextWindow: 3,                          // conversation memory window
       autoHeal: {                                // self-healing (opt-in)
         enabled: true,

@@ -10,7 +10,7 @@
  *   [Healing]   FAILED: click "#gone" (Could not heal selector)
  *
  * Access programmatically:
- *   const report = browser.getHealingReport();
+ *   const report = await browser.getHealingReport();
  *   // { totalHeals, successfulHeals, failedHeals, events: [...] }
  *
  * Each HealingEvent records:
@@ -32,7 +32,7 @@ describe('Use Case 3: Healing summary report', () => {
       await browser.url('https://the-internet.herokuapp.com/login');
 
       // The report is always available when autoHeal is enabled
-      const report = browser.getHealingReport!();
+      const report = await browser.getHealingReport!();
 
       expect(report).toMatchObject({
         totalHeals: expect.any(Number),
@@ -48,7 +48,7 @@ describe('Use Case 3: Healing summary report', () => {
     it('each event records the full healing context', async () => {
       // When a heal occurs, the event captures enough data to debug
       // selector drift patterns across test runs.
-      const report = browser.getHealingReport!();
+      const report = await browser.getHealingReport!();
 
       for (const event of report.events) {
         // Every event has these fields
@@ -81,7 +81,7 @@ describe('Use Case 3: Healing summary report', () => {
       await browser.url('https://the-internet.herokuapp.com/');
 
       // After a test run, aggregate healing events to find patterns:
-      const report = browser.getHealingReport!();
+      const report = await browser.getHealingReport!();
 
       if (report.totalHeals > 0) {
         // Count heal frequency per selector
@@ -121,7 +121,7 @@ describe('Use Case 3: Healing summary report', () => {
       await browser.url('https://the-internet.herokuapp.com/');
       await browser.agent('click Form Authentication');
 
-      const report = browser.getHealingReport!();
+      const report = await browser.getHealingReport!();
       const healRate = report.totalHeals > 0
         ? report.failedHeals / report.totalHeals
         : 0;
@@ -147,7 +147,7 @@ describe('Use Case 3: Healing summary report', () => {
       //
       // Feed this into your observability stack (Datadog, Grafana, etc.)
       // to track selector volatility over time.
-      const report = browser.getHealingReport!();
+      const report = await browser.getHealingReport!();
 
       const exportable = {
         timestamp: new Date().toISOString(),
@@ -187,7 +187,7 @@ describe('Use Case 3: Healing summary report', () => {
       // No extra config needed — it works with any WDIO reporter.
       await browser.url('https://the-internet.herokuapp.com/');
 
-      const report = browser.getHealingReport!();
+      const report = await browser.getHealingReport!();
       console.log(`[Healing] Summary: ${report.successfulHeals}/${report.totalHeals} healed`);
 
       // The report is available even when zero heals occurred
