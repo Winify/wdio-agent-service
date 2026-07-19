@@ -2,12 +2,9 @@ export const config: WebdriverIO.Config = {
 
   tsConfigPath: './tsconfig.json',
   specs: [
-    './test/specs/**/agent.spec.ts',
+    './test/specs/**/*.spec.ts',
   ],
-  // Patterns to exclude.
-  exclude: [
-    // 'path/to/excluded/files'
-  ],
+  exclude: [],
 
   maxInstances: 1,
 
@@ -26,11 +23,18 @@ export const config: WebdriverIO.Config = {
 
   services: [
     ['agent', {
-      provider: 'ollama',
-      providerUrl: 'http://localhost:11434',
-      model: 'qwen2.5-coder:3b',
-      maxActions: 2,
-      debug: true,
+      schema: 'openai',                          // 'anthropic' | 'openai'
+      providerUrl: 'http://100.69.254.5:1234',   // LM Studio, Ollama, OpenAI, etc.
+      model: 'qwen/qwen3.5-4b',                  // model name
+      maxActions: 3,                             // max actions per LLM response
+      maxSteps: 1,                               // default: single-pass (fast). >1 = ReAct loop
+      timeout: 15000,                            // LLM request timeout (ms)
+      contextWindow: 3,                          // conversation memory window
+      autoHeal: {                                // self-healing (opt-in)
+        enabled: true,
+        commands: ['click', 'setValue'],
+        maxAttempts: 2,
+      },
     }],
   ],
 
@@ -38,7 +42,7 @@ export const config: WebdriverIO.Config = {
   reporters: ['spec'],
   mochaOpts: {
     ui: 'bdd',
-    timeout: 60000,
+    timeout: 120000,
   },
 
   injectGlobals: true,

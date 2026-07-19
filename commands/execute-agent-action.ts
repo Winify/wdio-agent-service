@@ -1,5 +1,5 @@
 import 'webdriverio';
-import type { ActionType, AgentAction } from '../types';
+import type { ActionResult, ActionType, AgentAction } from '../types';
 import logger from '@wdio/logger';
 
 const log = logger('wdio-agent-service');
@@ -11,7 +11,7 @@ const actionsByType: Record<ActionType, (_browser: WebdriverIO.Browser, action: 
   },
   NAVIGATE: async (_browser: WebdriverIO.Browser, action: AgentAction) => {
     const url = action.target;
-    const targetUrl = url.match(/^https?:\/\//) ? url : `https://${url}`;
+    const targetUrl = /^[a-z][a-z0-9+.-]*:\/\//i.test(url) ? url : `https://${url}`;
     await _browser.url(targetUrl);
   },
   // Mobile actions
@@ -24,14 +24,26 @@ const actionsByType: Record<ActionType, (_browser: WebdriverIO.Browser, action: 
   },
 };
 
-export const executeAgentAction = async (_browser: WebdriverIO.Browser, action: AgentAction): Promise<void> => {
+/**
+ * Execute a single agent action. Returns ActionResult with success/failure info.
+ * Never throws — errors are captured as observation data for the agentic loop.
+ */
+export const executeAgentAction = async (_browser: WebdriverIO.Browser, action: AgentAction): Promise<ActionResult> => {
   log.debug(`[Agent] Executing: ${action.type} on "${action.target}"${action.value ? ` with value "${action.value}"` : ''}`);
 
   const agentAction = actionsByType[action.type];
 
   if (!agentAction) {
-    throw new Error(`Unknown action type: ${action.type}`);
+    return { action, success: false, error: `Unknown action type: ${action.type}` };
   }
 
-  return agentAction(_browser, action);
+  try {
+    await agentAction(_browser, action);
+    return { action, success: true };
+  } catch (err) {
+    const errorMessage = err instanceof Error ? err.message : String(err);
+    log.debug(`[Agent] Action failed: ${action.type} — ${errorMessage}`);
+
+    return { action, success: false, error: errorMessage };
+  }
 };
