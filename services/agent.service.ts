@@ -15,6 +15,8 @@ import { getSnapshot } from '../scripts/get-snapshot';
 import { buildAgenticPrompt, buildObservationMessage, buildPrompt } from '../prompts';
 import { parseAgentStep, parseLlmResponse, resolveActionTargets } from '../commands/parse-llm-response';
 import { executeAgentAction } from '../commands/execute-agent-action';
+import { installInterceptors } from '../healing/interceptor';
+import { healingReport } from '../healing/report';
 import logger from '@wdio/logger';
 
 const log = logger('wdio-agent-service');
@@ -60,12 +62,21 @@ export default class AgentService implements Services.ServiceInstance {
   ): void {
     this.provider = initializeProvider(this.resolvedConfig);
 
+    // Install self-healing interceptors if configured
+    healingReport.clear();
+    if (this.resolvedConfig.autoHeal?.enabled) {
+      installInterceptors(browser, this.resolvedConfig.autoHeal, this.provider.send.bind(this.provider));
+    }
+
     // Register the main agent command
     browser.addCommand(
       'agent',
       async (prompt: string, options?: AgentCallOptions): Promise<AgentResult> =>
         this.executeAgent(browser, prompt, options),
     );
+
+    // Register healing report accessor
+    browser.addCommand('getHealingReport', () => healingReport.getReport());
 
     log.debug('[Agent] Service initialized with config:', this.resolvedConfig);
   }
@@ -230,6 +241,33 @@ export default class AgentService implements Services.ServiceInstance {
     log.info(`[Agent] Loop finished: ${step} step(s), goalAchieved=${goalAchieved}`);
 
     return { actions: allActions, steps: allSteps, goalAchieved, totalSteps: step };
+  }
+
+  // ── Healing summary ─────────────────────────────────────────
+
+  /**
+   * After the test suite, emit healing summary if any healing occurred.
+   */
+  after(
+    _result: number,
+    _capabilities: WebdriverIO.Capabilities,
+    _specs: string[],
+  ): void {
+    if (!this.resolvedConfig.autoHeal?.enabled) return;
+
+    const report = healingReport.getReport();
+    if (report.totalHeals === 0) return;
+
+    log.info(`[Healing] Summary: ${report.successfulHeals}/${report.totalHeals} healed successfully`);
+
+    // Emit via process for custom reporters to pick up
+    for (const event of report.events) {
+      const status = event.success ? 'HEALED' : 'FAILED';
+      log.info(`[Healing]   ${status}: ${event.command} "${event.originalSelector}"${event.healedSelector ? ` → "${event.healedSelector}"` : ''}${event.error ? ` (${event.error})` : ''}`);
+    }
+
+    // Clear for next suite
+    healingReport.clear();
   }
 
   // ── Conversation trimming ────────────────────────────────────
