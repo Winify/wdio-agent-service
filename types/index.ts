@@ -62,6 +62,9 @@ export interface AgentServiceConfig {
   /** Maximum output tokens per LLM response. Default: 1024 */
   maxOutputTokens?: number;
 
+  /** Maximum elements in the page snapshot sent to the LLM. No limit by default (undefined). Set ~40 for 4B local models. */
+  maxSnapshotElements?: number;
+
   /** Maximum agentic loop steps. 1 = single-pass (no loop). Default: 1 */
   maxSteps?: number;
 

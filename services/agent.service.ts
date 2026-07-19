@@ -110,7 +110,7 @@ export default class AgentService implements Services.ServiceInstance {
     platform: Platform,
     maxActions: number,
   ): Promise<AgentResult> {
-    const snapshot = await getSnapshot(_browser);
+    const snapshot = await getSnapshot(_browser, { maxElements: this.resolvedConfig.maxSnapshotElements });
 
     log.debug('[Agent] Single-pass mode');
 
@@ -160,7 +160,7 @@ export default class AgentService implements Services.ServiceInstance {
     log.info(`[Agent] Agentic loop mode (maxSteps: ${maxSteps})`);
 
     // Get initial page state
-    const initialSnapshot = await getSnapshot(_browser);
+    const initialSnapshot = await getSnapshot(_browser, { maxElements: this.resolvedConfig.maxSnapshotElements });
     const agenticPrompt = buildAgenticPrompt(initialSnapshot.text, prompt, maxActions, platform);
 
     // Build conversation
@@ -233,7 +233,7 @@ export default class AgentService implements Services.ServiceInstance {
       }
 
       // Re-snapshot page elements
-      const updatedSnapshot = await getSnapshot(_browser);
+      const updatedSnapshot = await getSnapshot(_browser, { maxElements: this.resolvedConfig.maxSnapshotElements });
       currentElements = updatedSnapshot.elements;
 
       // Build observation message

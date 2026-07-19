@@ -5,9 +5,6 @@ import logger from '@wdio/logger';
 
 const log = logger('wdio-agent-service');
 
-/** Maximum elements to include in the snapshot for small-model performance. */
-const MAX_ELEMENTS = 40;
-
 /**
  * Trim the snapshot text to at most `limit` elements (lines with eN IDs).
  * Keeps structural lines (no eN IDs) and the first N interactive elements.
@@ -42,10 +39,13 @@ function trimSnapshot(snapshot: SnapshotResult, limit: number): SnapshotResult {
  * Take a snapshot of the current page/app state using @wdio/elements.
  * Returns the native snapshot format with `text` (tree with e1, e2, ... IDs)
  * and `elements` map (eN → SnapshotElement).
+ *
+ * @param maxElements - Optional limit on interactive elements. No limit by default.
+ *   Set ~40 for 4B local models.
  */
 export async function getSnapshot(
   browser: WebdriverIO.Browser,
-  options?: { inViewportOnly?: boolean },
+  options?: { inViewportOnly?: boolean; maxElements?: number },
 ): Promise<SnapshotResult> {
   try {
     const result = await elementsGetSnapshot(browser, {
@@ -57,11 +57,13 @@ export async function getSnapshot(
       return { text: '[No elements found]', elements: {} };
     }
 
-    const trimmed = result.elements && Object.keys(result.elements).length > MAX_ELEMENTS
-      ? trimSnapshot(result, MAX_ELEMENTS)
+    const limit = options?.maxElements;
+    const shouldTrim = limit !== undefined && result.elements && Object.keys(result.elements).length > limit;
+    const trimmed = shouldTrim
+      ? trimSnapshot(result, limit)
       : result;
 
-    log.debug(`[Agent] Snapshot captured: ${Object.keys(trimmed.elements).length} elements${Object.keys(result.elements).length > MAX_ELEMENTS ? ` (trimmed from ${Object.keys(result.elements).length})` : ''}`);
+    log.debug(`[Agent] Snapshot captured: ${Object.keys(trimmed.elements).length} elements${shouldTrim ? ` (trimmed from ${Object.keys(result.elements).length})` : ''}`);
     return trimmed;
   } catch (error) {
     log.error('[Agent] Snapshot failed:', error);

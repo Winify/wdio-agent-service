@@ -47,7 +47,7 @@ services: [['agent', {
 ## Model Constraints
 - Default to single-pass (`maxSteps: 1`). ReAct loop requires 7B+ models.
 - Compact prompts (~15 lines) for 4B models. Strict JSON output format with explicit examples.
-- Cap snapshots at 40 elements (`scripts/get-snapshot.ts` MAX_ELEMENTS).
+- Optional `maxSnapshotElements` config (no default cap). Set ~40 for 4B local models.
 - 10-15s LLM timeout for local 4B models.
 
 ## Provider Architecture
