@@ -148,7 +148,7 @@ function buildAgentStep(raw: { actions?: LlmProposedAction[]; done?: boolean; re
 
   for (const [i, a] of (raw.actions ?? []).entries()) {
     if (!a.action || typeof a.action !== 'string') {
-      // Let validateAction produce the descriptive error
+      // validateAction throws with a descriptive error — abort parsing
       actions.push(validateAction(a, i));
       continue;
     }

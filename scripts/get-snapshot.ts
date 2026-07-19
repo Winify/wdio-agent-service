@@ -29,7 +29,8 @@ function trimSnapshot(snapshot: SnapshotResult, limit: number): SnapshotResult {
   }
 
   if (count >= limit) {
-    trimmed.push(`  ... (${Object.keys(snapshot.elements).length - limit} more elements omitted)`);
+    trimmed.unshift(`(trimmed to first ${limit} of ${Object.keys(snapshot.elements).length} elements)`);
+    trimmed.push(`  ... (${Object.keys(snapshot.elements).length - limit} more elements omitted — increase maxSnapshotElements to include them)`);
   }
 
   return { text: trimmed.join('\n'), elements: trimmedElements };

@@ -69,6 +69,7 @@ export const config: WebdriverIO.Config = {
 | `timeout`        | `number`                                                      | `30000`              | Request timeout in ms                                                                                                      |
 | `maxRetries`     | `number`                                                      | `2`                  | Max retry attempts on retryable errors (5xx, 429, network). Exponential backoff                                            |
 | `maxOutputTokens`| `number`                                                      | `1024`               | Maximum output tokens per LLM response                                                                                     |
+| `maxSnapshotElements` | `number`                                                 | —                    | Limit interactive elements in page snapshot. Set ~40 for 4B local models. No limit by default                             |
 | `autoHeal`       | `HealConfig`                                                  | —                    | Self-healing configuration (see [Self-Healing](#self-healing) below)                                                       |
 | `send`           | `(prompt: PromptInput) => Promise<string>`                    | —                    | Override the built-in adapter entirely. When set, `schema`/`providerUrl`/`token`/`model` are ignored                       |
 
@@ -184,6 +185,7 @@ services: [
       enabled: true,
       commands: ['click', 'setValue'],    // which commands to intercept
       maxAttempts: 2,                      // max healing attempts per failure
+      settleDelay: 200,                    // ms to wait for animations after scroll-into-view
     },
   }]
 ],

@@ -31,6 +31,9 @@ export function installInterceptors(
 
   // Track selectors from $() lookups so element-scoped commands can retrieve
   // the correct selector even for elements created before the interceptor.
+  // NOTE: $$() (multi-element lookup) is NOT tracked. Elements obtained via
+  // $$() won't have their selectors in the WeakMap, so healing will rethrow
+  // the original error for those element interactions.
   browser.overwriteCommand('$', function (origCommand, selector: string) {
     const el = origCommand(selector);
     if (el && typeof el === 'object') {
@@ -51,11 +54,13 @@ export function installInterceptors(
 
   const maxAttempts = config.maxAttempts ?? 1;
 
+  const settleDelay = config.settleDelay ?? 200;
+
   // Install interceptor for each configured command
   for (const command of config.commands) {
     browser.overwriteCommand(command, async function (origCommand, ...args: unknown[]) {
       const selector = getSelector(this);
-      return withHeal(browser, command, selector, origCommand, args, send, maxAttempts);
+      return withHeal(browser, command, selector, origCommand, args, send, maxAttempts, settleDelay);
     }, true);
   }
 }
@@ -87,6 +92,7 @@ async function withHeal(
   args: unknown[],
   send: (prompt: PromptInput) => Promise<string>,
   maxAttempts: number,
+  settleDelay: number,
 ): Promise<unknown> {
   try {
     return await origCommand(...args);
@@ -107,7 +113,7 @@ async function withHeal(
       const el = await browser.$(selector);
       await el.scrollIntoView({ block: 'center', inline: 'center' });
       // Let animations settle
-      await new Promise((resolve) => setTimeout(resolve, 200));
+      await new Promise((resolve) => setTimeout(resolve, settleDelay));
       return origCommand(...args);
     }
 

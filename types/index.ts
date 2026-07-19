@@ -32,6 +32,8 @@ export interface HealConfig {
   commands: ('click' | 'setValue' | 'tap')[];
   /** Max healing attempts per command. Default: 1 */
   maxAttempts: number;
+  /** Delay in ms after scroll-into-view to let animations settle. Default: 200 */
+  settleDelay?: number;
 }
 
 export interface AgentServiceConfig {

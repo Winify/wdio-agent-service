@@ -46,6 +46,7 @@ export default class AgentService implements Services.ServiceInstance {
       maxOutputTokens: serviceOptions.maxOutputTokens ?? 1024,
       maxSteps: serviceOptions.maxSteps ?? 1,
       contextWindow: serviceOptions.contextWindow ?? 3,
+      maxSnapshotElements: serviceOptions.maxSnapshotElements,
       send: serviceOptions.send,
       autoHeal: serviceOptions.autoHeal,
     };
