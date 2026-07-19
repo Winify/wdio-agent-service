@@ -136,16 +136,23 @@ export interface AgentCallOptions {
 export interface HealingEvent {
   command: string;
   originalSelector: string;
+  /** The replacement selector suggested by the LLM. Apply this to fix the test. */
   healedSelector?: string;
-  success: boolean;
+  /** Whether the LLM found a fixable replacement. false = needs manual review. */
+  fixable: boolean;
+  /** Human-readable suggestion for how to fix the failing selector. */
+  suggestion?: string;
   error?: string;
   timestamp: number;
 }
 
 export interface HealingReport {
-  totalHeals: number;
-  successfulHeals: number;
-  failedHeals: number;
+  /** Total number of selector failures analysed. */
+  totalEvents: number;
+  /** Selectors the LLM found replacements for — apply these changes. */
+  fixableCount: number;
+  /** Selectors that need manual investigation. */
+  manualReviewCount: number;
   events: HealingEvent[];
 }
 
@@ -168,7 +175,7 @@ declare global {
        * Get healing report for the current test run.
        * Only populated when autoHeal is enabled.
        */
-      getHealingReport?: () => HealingReport;
+      getHealingReport?: () => Promise<HealingReport>;
     }
   }
 }

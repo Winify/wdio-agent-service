@@ -26,7 +26,7 @@ ${maxActions}
 
 // ── Agentic prompt builders ───────────────────────────────────
 
-function getAgenticUserPrompt(elements: string, userRequest: string, platform: Platform): string {
+function getAgenticUserPrompt(elements: string, userRequest: string, maxActions: number, platform: Platform): string {
   const contextLabel = platform === 'browser' ? 'webpage' : 'mobile app';
   return `
 Here are the current ${contextLabel} elements:
@@ -35,6 +35,8 @@ ${elements}
 </elements>
 
 Goal: ${userRequest}
+
+Return at most ${maxActions} action(s) in this step.
 
 Think step by step. What do you observe? What action should you take?
 `.trim();
@@ -66,12 +68,13 @@ export function buildPrompt(
 export function buildAgenticPrompt(
   elements: string,
   userRequest: string,
+  maxActions: number,
   platform: Platform,
 ): PromptInput {
   const system = platform === 'browser' ? agenticBrowserSystemPrompt : agenticMobileSystemPrompt;
   return {
     system,
-    user: getAgenticUserPrompt(elements, userRequest, platform),
+    user: getAgenticUserPrompt(elements, userRequest, maxActions, platform),
   };
 }
 

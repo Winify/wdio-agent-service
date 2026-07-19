@@ -13,6 +13,7 @@ interface ResolvedConfig {
   timeout: number;
   maxRetries: number;
   maxOutputTokens: number;
+  isOllama: boolean;
 }
 
 /**
@@ -61,6 +62,9 @@ export function resolveLlmConfig(config: AgentServiceConfig): LLMProvider {
     timeout: config.timeout ?? 30000,
     maxRetries: config.maxRetries ?? 2,
     maxOutputTokens: config.maxOutputTokens ?? 1024,
+    // The default endpoint is Ollama. A custom endpoint is OpenAI-compatible
+    // unless the caller explicitly supplies Ollama's /api/chat path.
+    isOllama: schema === 'openai' && isOllamaEndpoint(endpoint),
   };
 
   log.debug(`[Agent] Schema: ${resolved.schema}, model: ${resolved.model}, endpoint: ${resolved.endpoint}`);
@@ -102,16 +106,18 @@ async function chatRequest(
 // ── URL construction ──────────────────────────────────────────
 
 function buildUrl(cfg: ResolvedConfig): string {
+  const endpoint = cfg.endpoint.replace(/\/+$/, '');
   if (cfg.schema === 'anthropic') {
-    return `${cfg.endpoint}/v1/messages`;
+    return endpoint.endsWith('/v1/messages') ? endpoint : `${endpoint}/v1/messages`;
   }
-  // openai schema — ollama uses /api/chat, openai uses /v1/chat/completions.
-  // If the user set a custom providerUrl (like ollama's http://localhost:11434),
-  // append the right path.
-  if (cfg.endpoint.includes('localhost') || cfg.endpoint.includes('127.0.0.1')) {
-    return cfg.endpoint.endsWith('/api/chat') ? cfg.endpoint : `${cfg.endpoint}/api/chat`;
+  // Ollama's native endpoint differs from OpenAI Chat Completions. Do not use
+  // hostnames to infer it: LM Studio and other OpenAI-compatible servers are
+  // commonly hosted on localhost as well.
+  if (cfg.isOllama) {
+    return endpoint.endsWith('/api/chat') ? endpoint : `${endpoint}/api/chat`;
   }
-  return cfg.endpoint.endsWith('/v1/chat/completions') ? cfg.endpoint : `${cfg.endpoint}/v1/chat/completions`;
+  if (endpoint.endsWith('/v1/chat/completions')) return endpoint;
+  return endpoint.endsWith('/v1') ? `${endpoint}/chat/completions` : `${endpoint}/v1/chat/completions`;
 }
 
 // ── Headers ───────────────────────────────────────────────────
@@ -156,10 +162,7 @@ function buildRequestBody(
     content: m.content,
   }));
 
-  // Detect ollama vs standard openai
-  const isOllama = !cfg.apiKey && (cfg.endpoint.includes('localhost') || cfg.endpoint.includes('127.0.0.1'));
-
-  if (isOllama) {
+  if (cfg.isOllama) {
     return {
       model: cfg.model,
       messages: openaiMessages,
@@ -179,6 +182,13 @@ function buildRequestBody(
     max_tokens: cfg.maxOutputTokens,
     ...(opts?.responseSchema ? { response_format: { type: 'json_schema', json_schema: opts.responseSchema } } : {}),
   };
+}
+
+function isOllamaEndpoint(endpoint: string): boolean {
+  const normalized = endpoint.replace(/\/+$/, '');
+  return normalized === 'http://localhost:11434'
+    || normalized === 'http://127.0.0.1:11434'
+    || normalized.endsWith('/api/chat');
 }
 
 // ── Response extraction ───────────────────────────────────────

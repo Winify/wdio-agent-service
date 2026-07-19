@@ -72,7 +72,7 @@ export default class AgentService implements Services.ServiceInstance {
     );
 
     // Register healing report accessor
-    browser.addCommand('getHealingReport', () => healingReport.getReport());
+    browser.addCommand('getHealingReport', async () => healingReport.getReport());
 
     log.debug('[Agent] Service initialized with config:', this.resolvedConfig);
   }
@@ -95,7 +95,7 @@ export default class AgentService implements Services.ServiceInstance {
       return this.executeSinglePass(_browser, prompt, platform, maxActions);
     }
 
-    return this.executeAgenticLoop(_browser, prompt, platform);
+    return this.executeAgenticLoop(_browser, prompt, platform, maxSteps, maxActions);
   }
 
   // ── Single-pass mode ────────────────────────────────────────
@@ -151,15 +151,16 @@ export default class AgentService implements Services.ServiceInstance {
     _browser: WebdriverIO.Browser,
     prompt: string,
     platform: Platform,
+    maxSteps: number,
+    maxActions: number,
   ): Promise<AgentResult> {
-    const maxSteps = this.resolvedConfig.maxSteps!;
     const contextWindow = this.resolvedConfig.contextWindow!;
 
     log.info(`[Agent] Agentic loop mode (maxSteps: ${maxSteps})`);
 
     // Get initial page state
     const initialSnapshot = await getSnapshot(_browser);
-    const agenticPrompt = buildAgenticPrompt(initialSnapshot.text, prompt, platform);
+    const agenticPrompt = buildAgenticPrompt(initialSnapshot.text, prompt, maxActions, platform);
 
     // Build conversation
     const messages: ChatMessage[] = [
@@ -197,13 +198,17 @@ export default class AgentService implements Services.ServiceInstance {
         continue;
       }
 
-      log.info(`[Agent] Step ${step}: ${agentStep.actions.length} action(s), done=${agentStep.done}${agentStep.reasoning ? ` — ${agentStep.reasoning}` : ''}`);
+      const actions = agentStep.actions.slice(0, maxActions);
+      if (agentStep.actions.length > maxActions) {
+        log.warn(`[Agent] Step ${step}: limiting ${agentStep.actions.length} proposed actions to maxActions=${maxActions}`);
+      }
+      log.info(`[Agent] Step ${step}: ${actions.length} action(s), done=${agentStep.done}${agentStep.reasoning ? ` — ${agentStep.reasoning}` : ''}`);
 
       // Append assistant message to conversation
       messages.push({ role: 'assistant', content: response });
 
       // Resolve eN virtual IDs → real selectors
-      const resolvedActions = resolveActionTargets(agentStep.actions, currentElements);
+      const resolvedActions = resolveActionTargets(actions, currentElements);
 
       // Execute actions
       const stepResults: ActionResult[] = [];
@@ -242,7 +247,8 @@ export default class AgentService implements Services.ServiceInstance {
   // ── Healing summary ─────────────────────────────────────────
 
   /**
-   * After the test suite, emit healing summary if any healing occurred.
+   * After all specs complete, emit the healing summary.
+   * Uses after() hook — called in worker; visible via WDIO logs.
    */
   after(
     _result: number,
@@ -252,15 +258,22 @@ export default class AgentService implements Services.ServiceInstance {
     if (!this.resolvedConfig.autoHeal?.enabled) return;
 
     const report = healingReport.getReport();
-    if (report.totalHeals === 0) return;
+    if (report.totalEvents === 0) return;
 
-    log.info(`[Healing] Summary: ${report.successfulHeals}/${report.totalHeals} healed successfully`);
+    log.error(
+      `\n[Healing] ${report.fixableCount} selector(s) can be fixed automatically, ` +
+      `${report.manualReviewCount} need(s) manual review`,
+    );
 
-    // Emit via process for custom reporters to pick up
     for (const event of report.events) {
-      const status = event.success ? 'HEALED' : 'FAILED';
-      log.info(`[Healing]   ${status}: ${event.command} "${event.originalSelector}"${event.healedSelector ? ` → "${event.healedSelector}"` : ''}${event.error ? ` (${event.error})` : ''}`);
+      if (event.fixable) {
+        log.error(`[Healing]   FIX: ${event.command}  "${event.originalSelector}" → "${event.healedSelector}"`);
+      } else {
+        log.error(`[Healing]   MANUAL: ${event.command} "${event.originalSelector}" — ${event.suggestion || 'needs investigation'}`);
+      }
     }
+
+    healingReport.clear();
 
     // Clear for next suite
     healingReport.clear();

@@ -242,6 +242,21 @@ describe('resolveLlmConfig', () => {
       const call = mockFetch.mock.calls[0];
       expect(call[0]).toBe('http://localhost:11434/api/chat');
     });
+
+    it('uses OpenAI Chat Completions for a tokenless local OpenAI-compatible endpoint', async () => {
+      mockFetch.mockResolvedValueOnce(createResponse(200, {
+        choices: [{ message: { content: 'LM Studio response' } }],
+      }));
+
+      const provider = resolveLlmConfig({ schema: 'openai', providerUrl: 'http://localhost:1234/v1' });
+      await provider.send({ system: 's', user: 'u' });
+
+      const call = mockFetch.mock.calls[0];
+      expect(call[0]).toBe('http://localhost:1234/v1/chat/completions');
+      const body = JSON.parse(call[1].body);
+      expect(body.max_tokens).toBe(1024);
+      expect(body.options).toBeUndefined();
+    });
   });
 
   // ── HTTP behavior ───────────────────────────────────────────

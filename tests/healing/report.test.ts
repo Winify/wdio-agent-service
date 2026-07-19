@@ -8,57 +8,57 @@ describe('HealingReportStore', () => {
 
   it('starts empty', () => {
     const report = healingReport.getReport();
-    expect(report.totalHeals).toBe(0);
-    expect(report.successfulHeals).toBe(0);
-    expect(report.failedHeals).toBe(0);
+    expect(report.totalEvents).toBe(0);
+    expect(report.fixableCount).toBe(0);
+    expect(report.manualReviewCount).toBe(0);
     expect(report.events).toHaveLength(0);
   });
 
-  it('tracks successful healing', () => {
+  it('tracks fixable selector', () => {
     healingReport.addEvent({
       command: 'click',
       originalSelector: '#old-btn',
       healedSelector: '#new-btn',
-      success: true,
+      fixable: true,
     });
 
     const report = healingReport.getReport();
-    expect(report.totalHeals).toBe(1);
-    expect(report.successfulHeals).toBe(1);
-    expect(report.failedHeals).toBe(0);
+    expect(report.totalEvents).toBe(1);
+    expect(report.fixableCount).toBe(1);
+    expect(report.manualReviewCount).toBe(0);
     expect(report.events[0].timestamp).toBeGreaterThan(0);
   });
 
-  it('tracks failed healing', () => {
+  it('tracks selector needing manual review', () => {
     healingReport.addEvent({
       command: 'setValue',
       originalSelector: '#gone',
-      success: false,
+      fixable: false,
       error: 'Could not heal selector',
     });
 
     const report = healingReport.getReport();
-    expect(report.totalHeals).toBe(1);
-    expect(report.successfulHeals).toBe(0);
-    expect(report.failedHeals).toBe(1);
+    expect(report.totalEvents).toBe(1);
+    expect(report.fixableCount).toBe(0);
+    expect(report.manualReviewCount).toBe(1);
   });
 
-  it('aggregates multiple events', () => {
-    healingReport.addEvent({ command: 'click', originalSelector: '#a', healedSelector: '#a2', success: true });
-    healingReport.addEvent({ command: 'click', originalSelector: '#b', success: false, error: 'not found' });
-    healingReport.addEvent({ command: 'setValue', originalSelector: '#c', healedSelector: '#c2', success: true });
+  it('aggregates fixable and manual events', () => {
+    healingReport.addEvent({ command: 'click', originalSelector: '#a', healedSelector: '#a2', fixable: true });
+    healingReport.addEvent({ command: 'click', originalSelector: '#b', fixable: false, error: 'not found' });
+    healingReport.addEvent({ command: 'setValue', originalSelector: '#c', healedSelector: '#c2', fixable: true });
 
     const report = healingReport.getReport();
-    expect(report.totalHeals).toBe(3);
-    expect(report.successfulHeals).toBe(2);
-    expect(report.failedHeals).toBe(1);
+    expect(report.totalEvents).toBe(3);
+    expect(report.fixableCount).toBe(2);
+    expect(report.manualReviewCount).toBe(1);
   });
 
-  it('clear() resets all data', () => {
-    healingReport.addEvent({ command: 'click', originalSelector: '#x', success: false, error: 'err' });
+  it('clear() resets the report', () => {
+    healingReport.addEvent({ command: 'click', originalSelector: '#x', fixable: false, error: 'err' });
     healingReport.clear();
 
     const report = healingReport.getReport();
-    expect(report.totalHeals).toBe(0);
+    expect(report.totalEvents).toBe(0);
   });
 });

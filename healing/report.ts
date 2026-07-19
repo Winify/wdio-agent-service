@@ -12,12 +12,12 @@ class HealingReportStore {
   }
 
   getReport(): HealingReport {
-    const totalHeals = this.events.length;
-    const successfulHeals = this.events.filter(e => e.success).length;
+    const totalEvents = this.events.length;
+    const fixableCount = this.events.filter(e => e.fixable).length;
     return {
-      totalHeals,
-      successfulHeals,
-      failedHeals: totalHeals - successfulHeals,
+      totalEvents,
+      fixableCount,
+      manualReviewCount: totalEvents - fixableCount,
       events: [...this.events],
     };
   }

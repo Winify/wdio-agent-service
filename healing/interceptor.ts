@@ -127,8 +127,8 @@ async function withHeal(
       healingReport.addEvent({
         command: commandName,
         originalSelector: selector,
-        success: false,
-        error: 'Could not heal selector',
+        fixable: false,
+        suggestion: 'Element not found in page snapshot — update selector manually',
       });
       log.warn(`[Auto-Heal] Could not heal "${selector}". Throwing original error.`);
       throw error;
@@ -142,16 +142,18 @@ async function withHeal(
         command: commandName,
         originalSelector: selector,
         healedSelector,
-        success: true,
+        fixable: true,
+        suggestion: `Replace "${selector}" with "${healedSelector}"`,
       });
-      log.info(`[Auto-Heal] Successfully healed "${selector}" → "${healedSelector}"`);
+      log.info(`[Auto-Heal] Healed "${selector}" → "${healedSelector}"`);
       return result;
     } catch (retryError) {
       healingReport.addEvent({
         command: commandName,
         originalSelector: selector,
         healedSelector,
-        success: false,
+        fixable: false,
+        suggestion: `LLM suggested "${healedSelector}" but retry failed — verify element state`,
         error: (retryError as Error).message,
       });
       log.warn(`[Auto-Heal] Healed selector "${healedSelector}" also failed.`);
