@@ -126,7 +126,15 @@
     /* Skip type checking all .d.ts files. */
   },
   "include": [
-    "types/**/*"
+    "types/**/*",
+    "commands/**/*",
+    "healing/**/*",
+    "prompts/**/*",
+    "providers/**/*",
+    "schemas/**/*",
+    "scripts/**/*",
+    "services/**/*",
+    "tests/**/*"
   ],
   "exclude": [
     "node_modules",

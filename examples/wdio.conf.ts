@@ -28,9 +28,15 @@ export const config: WebdriverIO.Config = {
     ['agent', {
       provider: 'ollama',
       providerUrl: 'http://localhost:11434',
-      model: 'qwen2.5-coder:3b',
+      model: 'qwen2.5-coder:7b',
       maxActions: 2,
-      debug: true,
+      maxSteps: 1,          // 1 = single-pass, >1 = ReAct loop
+      contextWindow: 3,     // conversation memory window for agentic mode
+      // autoHeal: {        // self-healing configuration (opt-in)
+      //   enabled: true,
+      //   commands: ['click', 'setValue'],
+      //   maxAttempts: 2,
+      // },
     }],
   ],
 
