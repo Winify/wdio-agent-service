@@ -1,5 +1,4 @@
 import type { AgentServiceConfig, ChatMessage, LLMProvider, LLMProviderOptions, PromptInput } from '../types';
-import { PROVIDER_DEFAULTS } from '../types';
 import logger from '@wdio/logger';
 
 const log = logger('wdio-agent-service');
@@ -18,13 +17,14 @@ interface ResolvedConfig {
 
 /**
  * Resolve LLM configuration and return a provider with send() and chat().
- * Supports anthropic and openai schemas. Ollama uses openai format.
+ * Supports anthropic and openai API schemas. Any endpoint that speaks
+ * OpenAI Chat Completions (Ollama, LM Studio, OpenRouter, etc.) uses schema: 'openai'.
  */
 export function resolveLlmConfig(config: AgentServiceConfig): LLMProvider {
   // Complete override — user's send function takes priority
   if (config.send) {
-    if (config.provider) {
-      log.warn(`[Agent] Both 'send' override and 'provider: ${config.provider}' are set. The 'send' override takes priority.`);
+    if (config.schema) {
+      log.warn(`[Agent] Both 'send' override and 'schema: ${config.schema}' are set. The 'send' override takes priority.`);
     }
     const sendFn = config.send;
     return {
@@ -40,34 +40,30 @@ export function resolveLlmConfig(config: AgentServiceConfig): LLMProvider {
     };
   }
 
-  const provider = config.provider ?? 'ollama';
-  const defaults = PROVIDER_DEFAULTS[provider];
-  if (!defaults) {
-    throw new Error(`Unknown provider "${provider}". Supported: ollama, anthropic, openai`);
-  }
+  const schema: Schema = config.schema ?? 'openai';
 
-  // Ollama uses openai schema
-  const schema: Schema = provider === 'anthropic' ? 'anthropic' : 'openai';
-  const endpoint = config.providerUrl ?? defaults.url!;
+  // Sensible defaults per schema
+  const endpoint = config.providerUrl
+    ?? (schema === 'anthropic' ? 'https://api.anthropic.com' : 'http://localhost:11434');
+  const model = config.model
+    ?? (schema === 'anthropic' ? 'claude-sonnet-4-20250514' : 'qwen2.5-coder:7b');
 
   const apiKey = config.token
-    ?? (provider === 'anthropic'
+    ?? (schema === 'anthropic'
       ? (process.env['ANTHROPIC_API_KEY'] || process.env['ANTHROPIC_AUTH_TOKEN'])
-      : (provider === 'openai'
-        ? process.env['OPENAI_API_KEY']
-        : undefined));
+      : process.env['OPENAI_API_KEY']);
 
   const resolved: ResolvedConfig = {
     schema,
     endpoint,
-    model: config.model ?? defaults.model,
+    model,
     apiKey,
     timeout: config.timeout ?? 30000,
     maxRetries: config.maxRetries ?? 2,
     maxOutputTokens: config.maxOutputTokens ?? 1024,
   };
 
-  log.debug(`[Agent] Provider: ${provider}, schema: ${schema}, model: ${resolved.model}`);
+  log.debug(`[Agent] Schema: ${resolved.schema}, model: ${resolved.model}, endpoint: ${resolved.endpoint}`);
 
   return {
     send: (prompt, opts?) => sendRequest(resolved, prompt, opts),

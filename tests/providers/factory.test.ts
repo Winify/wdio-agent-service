@@ -40,23 +40,16 @@ describe('initializeProvider', () => {
     });
   });
 
-  it('throws on unknown provider', () => {
-    const config = { provider: 'unknown' } as unknown as AgentServiceConfig;
-    expect(() => initializeProvider(config)).toThrow(
-      'Unknown provider "unknown". Supported: ollama, anthropic, openai',
-    );
-  });
-
-  it('warns when both send override and provider are set', async () => {
+  it('warns when both send override and schema are set', async () => {
     const mockSend = vi.fn().mockResolvedValue('mock');
-    const config: AgentServiceConfig = { send: mockSend, provider: 'anthropic' };
+    const config: AgentServiceConfig = { send: mockSend, schema: 'anthropic' };
 
     const provider = initializeProvider(config);
     const result = await provider.send({ system: 's', user: 'u' });
 
     expect(result).toBe('mock');
     expect(mockWarn).toHaveBeenCalledWith(
-      expect.stringContaining("'send' override and 'provider: anthropic'"),
+      expect.stringContaining("'send' override and 'schema: anthropic'"),
     );
   });
 });

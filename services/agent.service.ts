@@ -8,7 +8,6 @@ import type {
   LLMProvider,
   Platform,
 } from '../types';
-import { PROVIDER_DEFAULTS } from '../types';
 import 'webdriverio';
 import { initializeProvider } from '../providers';
 import { getSnapshot } from '../scripts/get-snapshot';
@@ -36,13 +35,10 @@ export default class AgentService implements Services.ServiceInstance {
   private provider!: LLMProvider;
 
   constructor(serviceOptions: AgentServiceConfig = {}) {
-    const providerName = serviceOptions.provider ?? 'ollama';
-    const defaults = PROVIDER_DEFAULTS[providerName];
-
     this.resolvedConfig = {
-      provider: providerName,
-      providerUrl: serviceOptions.providerUrl ?? defaults.url,
-      model: serviceOptions.model ?? defaults.model,
+      schema: serviceOptions.schema ?? 'openai',
+      providerUrl: serviceOptions.providerUrl,
+      model: serviceOptions.model,
       token: serviceOptions.token,
       maxActions: serviceOptions.maxActions ?? 1,
       timeout: serviceOptions.timeout ?? 30000,

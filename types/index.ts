@@ -1,13 +1,12 @@
 import AgentService from '../services/agent.service';
 
-// ── Provider types ────────────────────────────────────────────
-export type Providers = 'ollama' | 'anthropic' | 'openai';
-
-export const PROVIDER_DEFAULTS: Record<Providers, { url?: string; model: string }> = {
-  ollama:    { url: 'http://localhost:11434', model: 'qwen2.5-coder:7b' },
-  anthropic: { url: 'https://api.anthropic.com', model: 'claude-sonnet-4-20250514' },
-  openai:    { url: 'https://api.openai.com', model: 'gpt-4o-mini' },
-};
+// ── LLM schema types ──────────────────────────────────────────
+/**
+ * API schema format for the LLM endpoint.
+ * - 'openai': OpenAI Chat Completions format (works with Ollama, LM Studio, OpenRouter, etc.)
+ * - 'anthropic': Anthropic Messages format
+ */
+export type ProviderSchema = 'anthropic' | 'openai';
 
 // ── Platform ──────────────────────────────────────────────────
 export type Platform = 'browser' | 'ios' | 'android';
@@ -36,16 +35,16 @@ export interface HealConfig {
 }
 
 export interface AgentServiceConfig {
-  /** LLM Provider. Default: ollama */
-  provider?: Providers;
+  /** API schema format. 'openai' works with Ollama, LM Studio, OpenRouter, etc. Default: 'openai' */
+  schema?: ProviderSchema;
 
-  /** LLM Provider API endpoint. Defaults: ollama=http://localhost:11434 */
+  /** LLM API endpoint base URL. Default: http://localhost:11434 */
   providerUrl?: string;
 
-  /** LLM Provider API token. For anthropic/openai, falls back to ANTHROPIC_API_KEY/OPENAI_API_KEY env vars */
+  /** API token. Falls back to schema-specific env vars (ANTHROPIC_API_KEY, OPENAI_API_KEY) */
   token?: string;
 
-  /** LLM model name. Defaults: ollama=qwen2.5-coder:7b, anthropic=claude-sonnet-4-20250514, openai=gpt-4o-mini */
+  /** LLM model name. Default: qwen2.5-coder:7b */
   model?: string;
 
   /** Maximum actions per LLM response. Default: 1 */
@@ -69,7 +68,7 @@ export interface AgentServiceConfig {
   /** Self-healing configuration. Default: disabled */
   autoHeal?: HealConfig;
 
-  /** Override the built-in provider entirely. When set, provider/providerUrl/token/model are ignored. */
+  /** Override the built-in LLM adapter entirely. When set, schema/providerUrl/token/model are ignored. */
   send?: (prompt: PromptInput) => Promise<string>;
 }
 

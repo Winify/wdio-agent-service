@@ -47,9 +47,9 @@ describe('resolveLlmConfig', () => {
     });
 
     it('warns when both send and provider are set', () => {
-      resolveLlmConfig({ send: vi.fn(), provider: 'anthropic' });
+      resolveLlmConfig({ send: vi.fn(), schema: 'anthropic' });
       expect(mockWarn).toHaveBeenCalledWith(
-        expect.stringContaining("'send' override and 'provider: anthropic'"),
+        expect.stringContaining("'send' override and 'schema: anthropic'"),
       );
     });
   });
@@ -62,7 +62,7 @@ describe('resolveLlmConfig', () => {
         content: [{ text: 'hello from claude' }],
       }));
 
-      const provider = resolveLlmConfig({ provider: 'anthropic', token: 'sk-ant-test' });
+      const provider = resolveLlmConfig({ schema: 'anthropic', token: 'sk-ant-test' });
       const result = await provider.send({ system: 'be helpful', user: 'click the button' });
 
       expect(result).toBe('hello from claude');
@@ -78,7 +78,7 @@ describe('resolveLlmConfig', () => {
     it('sets correct headers', async () => {
       mockFetch.mockResolvedValueOnce(createResponse(200, { content: [{ text: 'ok' }] }));
 
-      const provider = resolveLlmConfig({ provider: 'anthropic', token: 'my-key' });
+      const provider = resolveLlmConfig({ schema: 'anthropic', token: 'my-key' });
       await provider.send({ system: 's', user: 'u' });
 
       const headers = mockFetch.mock.calls[0][1].headers;
@@ -91,7 +91,7 @@ describe('resolveLlmConfig', () => {
       vi.stubEnv('ANTHROPIC_API_KEY', 'env-key');
       mockFetch.mockResolvedValueOnce(createResponse(200, { content: [{ text: 'ok' }] }));
 
-      const provider = resolveLlmConfig({ provider: 'anthropic' });
+      const provider = resolveLlmConfig({ schema: 'anthropic' });
       await provider.send({ system: 's', user: 'u' });
 
       const headers = mockFetch.mock.calls[0][1].headers;
@@ -104,7 +104,7 @@ describe('resolveLlmConfig', () => {
       delete process.env.ANTHROPIC_API_KEY;
       mockFetch.mockResolvedValueOnce(createResponse(200, { content: [{ text: 'ok' }] }));
 
-      const provider = resolveLlmConfig({ provider: 'anthropic' });
+      const provider = resolveLlmConfig({ schema: 'anthropic' });
       await provider.send({ system: 's', user: 'u' });
 
       const headers = mockFetch.mock.calls[0][1].headers;
@@ -116,7 +116,7 @@ describe('resolveLlmConfig', () => {
       mockFetch.mockResolvedValueOnce(createResponse(200, { content: [{ text: 'ok' }] }));
 
       const provider = resolveLlmConfig({
-        provider: 'anthropic',
+        schema: 'anthropic',
         token: 'tk',
         providerUrl: 'https://custom.anthropic.example.com',
         model: 'claude-opus-4-8',
@@ -132,7 +132,7 @@ describe('resolveLlmConfig', () => {
     it('handles multi-turn chat() correctly', async () => {
       mockFetch.mockResolvedValueOnce(createResponse(200, { content: [{ text: 'second response' }] }));
 
-      const provider = resolveLlmConfig({ provider: 'anthropic', token: 'tk' });
+      const provider = resolveLlmConfig({ schema: 'anthropic', token: 'tk' });
       const result = await provider.chat([
         { role: 'system', content: 'you are an agent' },
         { role: 'user', content: 'first message' },
@@ -159,7 +159,7 @@ describe('resolveLlmConfig', () => {
         choices: [{ message: { content: 'gpt response' } }],
       }));
 
-      const provider = resolveLlmConfig({ provider: 'openai', token: 'sk-openai' });
+      const provider = resolveLlmConfig({ schema: 'openai', providerUrl: 'https://api.openai.com', token: 'sk-openai', model: 'gpt-4o-mini' });
       const result = await provider.send({ system: 'be helpful', user: 'click button' });
 
       expect(result).toBe('gpt response');
@@ -180,7 +180,7 @@ describe('resolveLlmConfig', () => {
         choices: [{ message: { content: 'ok' } }],
       }));
 
-      const provider = resolveLlmConfig({ provider: 'openai', token: 'sk-key' });
+      const provider = resolveLlmConfig({ schema: 'openai', providerUrl: 'https://api.openai.com', token: 'sk-key' });
       await provider.send({ system: 's', user: 'u' });
 
       const headers = mockFetch.mock.calls[0][1].headers;
@@ -193,7 +193,7 @@ describe('resolveLlmConfig', () => {
         choices: [{ message: { content: 'ok' } }],
       }));
 
-      const provider = resolveLlmConfig({ provider: 'openai' });
+      const provider = resolveLlmConfig({ schema: 'openai', providerUrl: 'https://api.openai.com' });
       await provider.send({ system: 's', user: 'u' });
 
       const headers = mockFetch.mock.calls[0][1].headers;
@@ -204,16 +204,16 @@ describe('resolveLlmConfig', () => {
 
   // ── Ollama (openai schema) ──────────────────────────────────
 
-  describe('ollama provider', () => {
-    it('builds ollama-compatible request body', async () => {
+  describe('ollama via openai schema', () => {
+    it('builds openai schema request body with localhost', async () => {
       mockFetch.mockResolvedValueOnce(createResponse(200, {
-        message: { content: 'ollama response' },
+        message: { content: 'localhost response' },
       }));
 
-      const provider = resolveLlmConfig({ provider: 'ollama' });
+      const provider = resolveLlmConfig({ schema: 'openai' });
       const result = await provider.send({ system: 'be helpful', user: 'run test' });
 
-      expect(result).toBe('ollama response');
+      expect(result).toBe('localhost response');
       const call = mockFetch.mock.calls[0];
       expect(call[0]).toBe('http://localhost:11434/api/chat');
       const body = JSON.parse(call[1].body);
@@ -226,17 +226,17 @@ describe('resolveLlmConfig', () => {
     it('sends no auth headers', async () => {
       mockFetch.mockResolvedValueOnce(createResponse(200, { message: { content: 'ok' } }));
 
-      const provider = resolveLlmConfig({ provider: 'ollama' });
+      const provider = resolveLlmConfig({ schema: 'openai' });
       await provider.send({ system: 's', user: 'u' });
 
       const headers = mockFetch.mock.calls[0][1].headers;
       expect(headers['Authorization']).toBeUndefined();
     });
 
-    it('defaults to ollama when no provider specified', async () => {
+    it('defaults to openai when no provider specified', async () => {
       mockFetch.mockResolvedValueOnce(createResponse(200, { message: { content: 'ok' } }));
 
-      const provider = resolveLlmConfig({});
+      const provider = resolveLlmConfig({ schema: 'openai' });
       await provider.send({ system: 's', user: 'u' });
 
       const call = mockFetch.mock.calls[0];
@@ -252,7 +252,7 @@ describe('resolveLlmConfig', () => {
         .mockResolvedValueOnce(createResponse(429, {}))
         .mockResolvedValueOnce(createResponse(200, { content: [{ text: 'success after retry' }] }));
 
-      const provider = resolveLlmConfig({ provider: 'anthropic', token: 'tk' });
+      const provider = resolveLlmConfig({ schema: 'anthropic', token: 'tk' });
       const result = await provider.send({ system: 's', user: 'u' });
 
       expect(result).toBe('success after retry');
@@ -265,7 +265,7 @@ describe('resolveLlmConfig', () => {
         .mockResolvedValueOnce(createResponse(502, {}))
         .mockResolvedValueOnce(createResponse(200, { content: [{ text: 'ok' }] }));
 
-      const provider = resolveLlmConfig({ provider: 'anthropic', token: 'tk' });
+      const provider = resolveLlmConfig({ schema: 'anthropic', token: 'tk' });
       const result = await provider.send({ system: 's', user: 'u' });
 
       expect(result).toBe('ok');
@@ -275,7 +275,7 @@ describe('resolveLlmConfig', () => {
     it('throws after maxRetries exhausted', async () => {
       mockFetch.mockResolvedValue(createResponse(500, {}));
 
-      const provider = resolveLlmConfig({ provider: 'anthropic', token: 'tk', maxRetries: 1 });
+      const provider = resolveLlmConfig({ schema: 'anthropic', token: 'tk', maxRetries: 1 });
       await expect(provider.send({ system: 's', user: 'u' })).rejects.toThrow('LLM request failed');
       // 1 initial + 1 retry = 2 calls
       expect(mockFetch).toHaveBeenCalledTimes(2);
@@ -284,7 +284,7 @@ describe('resolveLlmConfig', () => {
     it('throws on 4xx (non-429) without retry', async () => {
       mockFetch.mockResolvedValueOnce(createResponse(401, {}));
 
-      const provider = resolveLlmConfig({ provider: 'anthropic', token: 'tk' });
+      const provider = resolveLlmConfig({ schema: 'anthropic', token: 'tk' });
       await expect(provider.send({ system: 's', user: 'u' })).rejects.toThrow('LLM request failed');
       expect(mockFetch).toHaveBeenCalledTimes(1);
     });
@@ -294,7 +294,7 @@ describe('resolveLlmConfig', () => {
         .mockRejectedValueOnce(new TypeError('fetch failed'))
         .mockResolvedValueOnce(createResponse(200, { content: [{ text: 'recovered' }] }));
 
-      const provider = resolveLlmConfig({ provider: 'anthropic', token: 'tk' });
+      const provider = resolveLlmConfig({ schema: 'anthropic', token: 'tk' });
       const result = await provider.send({ system: 's', user: 'u' });
 
       expect(result).toBe('recovered');
@@ -310,7 +310,7 @@ describe('resolveLlmConfig', () => {
         choices: [{ message: { content: 'ok' } }],
       }));
 
-      const provider = resolveLlmConfig({ provider: 'openai', token: 'tk' });
+      const provider = resolveLlmConfig({ schema: 'openai', providerUrl: 'https://api.openai.com', token: 'tk' });
       await provider.send({ system: 's', user: 'u' }, { temperature: 0.7 });
 
       const body = JSON.parse(mockFetch.mock.calls[0][1].body);
@@ -323,7 +323,7 @@ describe('resolveLlmConfig', () => {
       }));
 
       const schema = { type: 'object', properties: {} };
-      const provider = resolveLlmConfig({ provider: 'openai', token: 'tk' });
+      const provider = resolveLlmConfig({ schema: 'openai', providerUrl: 'https://api.openai.com', token: 'tk' });
       await provider.send({ system: 's', user: 'u' }, { responseSchema: schema });
 
       const body = JSON.parse(mockFetch.mock.calls[0][1].body);
@@ -333,11 +333,11 @@ describe('resolveLlmConfig', () => {
       });
     });
 
-    it('passes format for ollama structured output', async () => {
+    it('passes format for localhost format structured output', async () => {
       mockFetch.mockResolvedValueOnce(createResponse(200, { message: { content: 'ok' } }));
 
       const schema = { type: 'object' };
-      const provider = resolveLlmConfig({ provider: 'ollama' });
+      const provider = resolveLlmConfig({ schema: 'openai' });
       await provider.send({ system: 's', user: 'u' }, { responseSchema: schema });
 
       const body = JSON.parse(mockFetch.mock.calls[0][1].body);
