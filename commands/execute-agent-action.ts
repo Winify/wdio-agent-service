@@ -29,7 +29,7 @@ const actionsByType: Record<ActionType, (_browser: WebdriverIO.Browser, action: 
  * Never throws — errors are captured as observation data for the agentic loop.
  */
 export const executeAgentAction = async (_browser: WebdriverIO.Browser, action: AgentAction): Promise<ActionResult> => {
-  log.debug(`[Agent] Executing: ${action.type} on "${action.target}"${action.value ? ` with value "${action.value}"` : ''}`);
+  log.info(`[Agent] Executing: ${action.type} on "${action.target}"${action.value ? ` with value "${action.value}"` : ''}`);
 
   const agentAction = actionsByType[action.type];
 

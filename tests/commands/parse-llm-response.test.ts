@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
-import { parseAgentStep, parseLlmResponse, resolveActionTargets, resolveTarget } from '../../commands/parse-llm-response.js';
+import { parseLlmResponse, resolveActionTargets, resolveTarget } from '../../commands/parse-llm-response.js';
 
-// ── parseLlmResponse (single-pass) ────────────────────────────
+// ── parseLlmResponse ──────────────────────────────────────────
 
 describe('parseLlmResponse', () => {
   it('parses a valid JSON array', () => {
@@ -67,104 +67,6 @@ describe('parseLlmResponse', () => {
   it('accepts "action" or "type" field name', () => {
     const result = parseLlmResponse('[{"action":"CLICK","target":"e1"}]', 5);
     expect(result[0].type).toBe('CLICK');
-  });
-});
-
-// ── parseAgentStep (agentic loop) ─────────────────────────────
-
-describe('parseAgentStep', () => {
-  it('parses a complete agent step', () => {
-    const result = parseAgentStep(JSON.stringify({
-      reasoning: 'I see a login form',
-      actions: [{ action: 'SET_VALUE', target: 'e1', value: 'user' }],
-      done: false,
-    }));
-    expect(result.reasoning).toBe('I see a login form');
-    expect(result.actions).toHaveLength(1);
-    expect(result.done).toBe(false);
-  });
-
-  it('parses done=true step', () => {
-    const result = parseAgentStep(JSON.stringify({
-      actions: [],
-      done: true,
-    }));
-    expect(result.actions).toHaveLength(0);
-    expect(result.done).toBe(true);
-  });
-
-  it('handles DONE pseudo-action from small models', () => {
-    const result = parseAgentStep(JSON.stringify({
-      reasoning: 'Goal achieved',
-      actions: [{ action: 'DONE', target: '' }],
-      done: false,
-    }));
-    expect(result.actions).toHaveLength(0);
-    expect(result.done).toBe(true);
-  });
-
-  it('handles COMPLETE pseudo-action', () => {
-    const result = parseAgentStep(JSON.stringify({
-      reasoning: 'Done',
-      actions: [{ action: 'COMPLETE', target: '' }, { action: 'CLICK', target: 'e3' }],
-      done: false,
-    }));
-    expect(result.actions).toHaveLength(1); // CLICK kept, COMPLETE filters out
-    expect(result.done).toBe(true);
-  });
-
-  it('strips <think> blocks', () => {
-    const result = parseAgentStep('<think>\nI need to act\n</think>\n' + JSON.stringify({
-      actions: [{ action: 'CLICK', target: 'e1' }],
-      done: false,
-    }));
-    expect(result.actions).toHaveLength(1);
-  });
-
-  it('strips JS comments from JSON', () => {
-    const result = parseAgentStep('{\n// reasoning\n"reasoning": "test",\n"actions": [{"action":"CLICK","target":"e1"}],\n"done": false\n}');
-    expect(result.actions).toHaveLength(1);
-    expect(result.reasoning).toBe('test');
-  });
-
-  it('handles markdown-fenced response', () => {
-    const result = parseAgentStep('```json\n' + JSON.stringify({
-      actions: [{ action: 'TAP', target: 'e1' }],
-      done: true,
-    }) + '\n```');
-    expect(result.actions).toHaveLength(1);
-    expect(result.done).toBe(true);
-  });
-
-  it('throws on missing actions array', () => {
-    expect(() => parseAgentStep('{"reasoning": "no actions"}')).toThrow('missing "actions" array');
-  });
-
-  it('throws on non-JSON response', () => {
-    expect(() => parseAgentStep('just some text')).toThrow('No JSON object found');
-  });
-
-  it('throws descriptive error when action field is missing (not TypeError)', () => {
-    expect(() =>
-      parseAgentStep(JSON.stringify({
-        actions: [{ target: 'e1' }],
-        done: false,
-      })),
-    ).toThrow('missing "action" field');
-  });
-
-  it('strips <THINK> blocks case-insensitively', () => {
-    const result = parseAgentStep('<THINK>\nreasoning\n</THINK>\n' + JSON.stringify({
-      actions: [{ action: 'CLICK', target: 'e1' }],
-      done: false,
-    }));
-    expect(result.actions).toHaveLength(1);
-  });
-
-  it('strips /* block comments */ from JSON', () => {
-    const result = parseAgentStep('{/* reasoning */\n"actions":[{"action":"CLICK","target":"e1"}],"done":false}');
-    expect(result.actions).toHaveLength(1);
-    expect(result.done).toBe(false);
   });
 });
 

@@ -1,9 +1,14 @@
-import type { AgentServiceConfig, ChatMessage, LLMProvider, LLMProviderOptions, PromptInput } from '../types';
+import type { AgentServiceConfig, LLMProvider, LLMProviderOptions, PromptInput } from '../types';
 import logger from '@wdio/logger';
 
 const log = logger('wdio-agent-service');
 
 type Schema = 'anthropic' | 'openai';
+
+interface ChatMessage {
+  role: 'system' | 'user' | 'assistant';
+  content: string;
+}
 
 interface ResolvedConfig {
   schema: Schema;
@@ -17,7 +22,7 @@ interface ResolvedConfig {
 }
 
 /**
- * Resolve LLM configuration and return a provider with send() and chat().
+ * Resolve LLM configuration and return a provider with send().
  * Supports anthropic and openai API schemas. Any endpoint that speaks
  * OpenAI Chat Completions (Ollama, LM Studio, OpenRouter, etc.) uses schema: 'openai'.
  */
@@ -27,17 +32,8 @@ export function resolveLlmConfig(config: AgentServiceConfig): LLMProvider {
     if (config.schema) {
       log.warn(`[Agent] Both 'send' override and 'schema: ${config.schema}' are set. The 'send' override takes priority.`);
     }
-    const sendFn = config.send;
     return {
-      send: (prompt, _opts?) => sendFn(prompt),
-      chat: async (messages, _opts?) => {
-        const systemMsg = messages.find(m => m.role === 'system');
-        const userContent = messages
-          .filter(m => m.role !== 'system')
-          .map(m => `[${m.role}] ${m.content}`)
-          .join('\n');
-        return sendFn({ system: systemMsg?.content ?? '', user: userContent });
-      },
+      send: (prompt, _opts?) => config.send!(prompt),
     };
   }
 
@@ -77,7 +73,6 @@ export function resolveLlmConfig(config: AgentServiceConfig): LLMProvider {
 
   return {
     send: (prompt, opts?) => sendRequest(resolved, prompt, opts),
-    chat: (messages, opts?) => chatRequest(resolved, messages, opts),
   };
 }
 

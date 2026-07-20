@@ -32,22 +32,7 @@ describe('resolveLlmConfig', () => {
       expect(mockSend).toHaveBeenCalledWith({ system: 'sys', user: 'usr' });
     });
 
-    it('uses custom send function for chat()', async () => {
-      const mockSend = vi.fn().mockResolvedValue('chat custom');
-      const provider = resolveLlmConfig({ send: mockSend });
-
-      const result = await provider.chat([
-        { role: 'system', content: 'be helpful' },
-        { role: 'user', content: 'hello' },
-      ]);
-      expect(result).toBe('chat custom');
-      expect(mockSend).toHaveBeenCalledWith({
-        system: 'be helpful',
-        user: '[user] hello',
-      });
-    });
-
-    it('warns when both send and provider are set', () => {
+    it('warns when both send and schema are set', () => {
       resolveLlmConfig({ send: vi.fn(), schema: 'anthropic' });
       expect(mockWarn).toHaveBeenCalledWith(
         expect.stringContaining("'send' override and 'schema: anthropic'"),
@@ -143,27 +128,6 @@ describe('resolveLlmConfig', () => {
       const call = mockFetch.mock.calls[0];
       // Must not produce /v1/v1/messages
       expect(call[0]).toBe('https://api.anthropic.com/v1/messages');
-    });
-
-    it('handles multi-turn chat() correctly', async () => {
-      mockFetch.mockResolvedValueOnce(createResponse(200, { content: [{ text: 'second response' }] }));
-
-      const provider = resolveLlmConfig({ schema: 'anthropic', token: 'tk' });
-      const result = await provider.chat([
-        { role: 'system', content: 'you are an agent' },
-        { role: 'user', content: 'first message' },
-        { role: 'assistant', content: 'first response' },
-        { role: 'user', content: 'second message' },
-      ]);
-
-      expect(result).toBe('second response');
-      const body = JSON.parse(mockFetch.mock.calls[0][1].body);
-      expect(body.system).toBe('you are an agent');
-      expect(body.messages).toEqual([
-        { role: 'user', content: 'first message' },
-        { role: 'assistant', content: 'first response' },
-        { role: 'user', content: 'second message' },
-      ]);
     });
 
     it('warns when no API key is configured', async () => {

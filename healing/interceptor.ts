@@ -1,7 +1,9 @@
-import type { HealConfig, PromptInput } from '../types';
+import type { FixingSuggestionsConfig, HealConfig, PromptInput } from '../types';
 import type { ChainablePromiseElement } from 'webdriverio';
 import { healSelector } from './healer';
+import { suggestFix } from './healer';
 import { healingReport } from './report';
+import { fixingSuggestionsStore } from './fixing-suggestions';
 import logger from '@wdio/logger';
 
 const log = logger('wdio-agent-service');
@@ -75,10 +77,10 @@ async function executeElementCommand(
   switch (command) {
     case 'click':
       return el.click();
+    case 'tap':
+      return el.tap();
     case 'setValue':
       return el.setValue(args[0] as string);
-    case 'tap':
-      return (el as unknown as { tap: () => Promise<unknown> }).tap();
     default:
       return el;
   }
@@ -97,8 +99,12 @@ async function withHeal(
   try {
     return await origCommand(...args);
   } catch (error) {
-    if (!selector) throw error;
+    if (!selector) {
+      log.warn(`[Auto-Heal] No selector available for "${commandName}" — cannot heal`);
+      throw error;
+    }
     const msg = (error as Error)?.message ?? '';
+    log.debug(`[Auto-Heal] "${commandName}" failed for "${selector}": ${msg.substring(0, 120)}`);
 
     // ── Stale element reference: DOM changed between find and act ──
     if (msg.includes('stale element reference')) {
@@ -168,16 +174,92 @@ async function withHeal(
   }
 }
 
+async function captureSuggestion(
+  browser: WebdriverIO.Browser,
+  command: string,
+  selector: string | undefined,
+  origCommand: Function,
+  args: unknown[],
+  send: (prompt: PromptInput) => Promise<string>,
+): Promise<unknown> {
+  try {
+    return await origCommand(...args);
+  } catch (error) {
+    if (selector && isElementNotFoundError(error)) {
+      log.info(`[FixingSuggestions] Capturing suggestion for "${selector}" (${command})`);
+      const suggestion = await suggestFix(browser, selector, command, send);
+      if (suggestion) {
+        fixingSuggestionsStore.addSuggestion({
+          command,
+          originalSelector: selector,
+          suggestedSelector: suggestion.selector,
+          reasoning: suggestion.reasoning,
+        });
+      }
+    }
+    // Always re-throw — never retry
+    throw error;
+  }
+}
+
 function isElementNotFoundError(error: unknown): boolean {
   const msg = (error as Error)?.message ?? '';
+  const errorCode = (error as Record<string, unknown>)?.error as string | undefined;
 
   return (
     msg.includes('element not found') ||
     msg.includes("element wasn't found") ||
     msg.includes('no such element') ||
     msg.includes('Could not find element') ||
+    msg.includes('could not be located') ||                          // Appium
+    errorCode === 'no such element' ||                              // W3C protocol
     (msg.includes("Can't call") && msg.includes("because element wasn't found")) ||
     msg.includes('waitForExist') ||
     (msg.includes('element ("') && msg.includes('") not found'))
   );
+}
+
+// ── Fixing Suggestions interceptor ──────────────────────────────
+
+/**
+ * Install fixing suggestions interceptors on the browser object.
+ *
+ * Differs from autoHeal: never retries. Only captures element-not-found errors,
+ * asks the LLM for a suggested selector fix, and stores it for reporting.
+ */
+export function installFixingSuggestionsInterceptor(
+  browser: WebdriverIO.Browser,
+  config: FixingSuggestionsConfig,
+  send: (prompt: PromptInput) => Promise<string>,
+): void {
+  if (!config.enabled) return;
+  if (!config.commands || config.commands.length === 0) return;
+
+  log.info(`[FixingSuggestions] Enabled for: ${config.commands.join(', ')}`);
+
+  const elementSelectors = new WeakMap<object, string>();
+
+  browser.overwriteCommand('$', function (origCommand, selector: string) {
+    const el = origCommand(selector);
+    if (el && typeof el === 'object') {
+      elementSelectors.set(el, selector);
+    }
+    return el;
+  });
+
+  function getSelector(ctx: unknown): string | undefined {
+    if (ctx && typeof ctx === 'object') {
+      const obj = ctx as Record<string, unknown>;
+      if (typeof obj['selector'] === 'string') return obj['selector'];
+      return elementSelectors.get(ctx);
+    }
+    return undefined;
+  }
+
+  for (const command of config.commands) {
+    browser.overwriteCommand(command, async function (origCommand, ...args: unknown[]) {
+      const selector = getSelector(this);
+      return captureSuggestion(browser, command, selector, origCommand, args, send);
+    }, true);
+  }
 }

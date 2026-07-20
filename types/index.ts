@@ -1,4 +1,5 @@
 import AgentService from '../services/agent.service';
+import type { SnapshotResult } from '@wdio/elements';
 
 // ── LLM schema types ──────────────────────────────────────────
 /**
@@ -36,6 +37,13 @@ export interface HealConfig {
   settleDelay?: number;
 }
 
+export interface FixingSuggestionsConfig {
+  /** Enable fixing suggestions collection. Default: false */
+  enabled: boolean;
+  /** Commands to intercept for suggestions. Default: ['click', 'setValue', 'tap'] */
+  commands: ('click' | 'setValue' | 'tap')[];
+}
+
 export interface AgentServiceConfig {
   /** API schema format. 'openai' works with Ollama, LM Studio, OpenRouter, etc. Default: 'openai' */
   schema?: ProviderSchema;
@@ -67,14 +75,11 @@ export interface AgentServiceConfig {
   /** Maximum elements in the page snapshot sent to the LLM. No limit by default (undefined). Set ~40 for 4B local models. */
   maxSnapshotElements?: number;
 
-  /** Maximum agentic loop steps. 1 = single-pass (no loop). Default: 1 */
-  maxSteps?: number;
-
-  /** Number of recent step-pairs to keep in conversation memory. Default: 3 */
-  contextWindow?: number;
-
   /** Self-healing configuration. Default: disabled */
   autoHeal?: HealConfig;
+
+  /** Fixing suggestions configuration. Default: disabled */
+  fixingSuggestions?: FixingSuggestionsConfig;
 
   /** Override the built-in LLM adapter entirely. When set, schema/providerUrl/token/model are ignored. */
   send?: (prompt: PromptInput) => Promise<string>;
@@ -86,14 +91,8 @@ export interface LLMProviderOptions {
   temperature?: number;
 }
 
-export interface ChatMessage {
-  role: 'system' | 'user' | 'assistant';
-  content: string;
-}
-
 export interface LLMProvider {
   send(prompt: PromptInput, options?: LLMProviderOptions): Promise<string>;
-  chat(messages: ChatMessage[], options?: LLMProviderOptions): Promise<string>;
 }
 
 // ── Agent action types ────────────────────────────────────────
@@ -108,34 +107,20 @@ export interface PromptInput {
   user: string;
 }
 
-// ── Agentic loop types ────────────────────────────────────────
+// ── Agent execution types ─────────────────────────────────────
 export interface ActionResult {
   action: AgentAction;
   success: boolean;
   error?: string;
 }
 
-export interface AgentStep {
-  actions: AgentAction[];
-  done: boolean;
-  reasoning?: string;
-}
-
 export interface AgentResult {
-  /** Flat list of all executed actions (backward compat) */
+  /** Flat list of executed actions */
   actions: AgentAction[];
-  /** Detailed step history */
-  steps: Array<{ step: number; actions: ActionResult[]; done: boolean }>;
-  /** Whether the agent decided the goal was achieved */
-  goalAchieved: boolean;
-  /** Total number of loop steps executed */
-  totalSteps: number;
 }
 
 // ── Per-call options ─────────────────────────────────────────
 export interface AgentCallOptions {
-  /** Override maxSteps for this call. 1 = single-pass (fast). */
-  maxSteps?: number;
   /** Override maxActions for this call. */
   maxActions?: number;
 }
@@ -164,6 +149,23 @@ export interface HealingReport {
   events: HealingEvent[];
 }
 
+// ── Fixing suggestion types ───────────────────────────────────
+export interface FixingSuggestion {
+  command: string;
+  originalSelector: string;
+  /** The replacement selector suggested by the LLM based on the page snapshot. */
+  suggestedSelector: string;
+  /** LLM reasoning for why this selector matches the intended element. */
+  reasoning?: string;
+  timestamp: number;
+}
+
+export interface FixingSuggestionsReport {
+  /** Total number of selector failures analysed. */
+  totalEvents: number;
+  suggestions: FixingSuggestion[];
+}
+
 // ── Exports ───────────────────────────────────────────────────
 export default AgentService;
 export const launcher = AgentService;
@@ -174,8 +176,8 @@ declare global {
       /**
        * Execute natural language browser automation using LLM
        * @param prompt - Natural language instruction (e.g., "accept all cookies")
-       * @param options - Per-call overrides (maxSteps, maxActions)
-       * @returns Result containing executed actions and step history
+       * @param options - Per-call overrides (maxActions)
+       * @returns Result containing executed actions
        */
       agent: (prompt: string, options?: AgentCallOptions) => Promise<AgentResult>;
 
@@ -184,6 +186,19 @@ declare global {
        * Only populated when autoHeal is enabled.
        */
       getHealingReport?: () => Promise<HealingReport>;
+
+      /**
+       * Get fixing suggestions for the current test run.
+       * Only populated when fixingSuggestions is enabled.
+       */
+      getFixingSuggestions?: () => Promise<FixingSuggestionsReport>;
+
+      /**
+       * Take a snapshot of the current page/app elements.
+       * Returns a text tree with eN virtual IDs and an elements map.
+       * @param options.maxElements - optional cap on interactive elements
+       */
+      snapshot: (options?: { maxElements?: number }) => Promise<SnapshotResult>;
     }
   }
 }

@@ -4,42 +4,44 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 const {
   mockProviderSend,
-  mockProviderChat,
   mockInitializeProvider,
   mockGetSnapshot,
   mockBuildPrompt,
-  mockBuildAgenticPrompt,
-  mockBuildObservationMessage,
   mockParseLlmResponse,
-  mockParseAgentStep,
   mockResolveActionTargets,
   mockExecuteAgentAction,
   mockInstallInterceptors,
+  mockInstallFixingSuggestionsInterceptor,
   mockHealingAddEvent,
   mockHealingGetReport,
   mockHealingClear,
   mockFormatHealingSummary,
+  mockFixingSuggestionsAddSuggestion,
+  mockFixingSuggestionsGetReport,
+  mockFixingSuggestionsClear,
+  mockFormatFixingSuggestions,
   mockLogWarn,
   mockLogInfo,
   mockLogDebug,
   mockLogError,
 } = vi.hoisted(() => ({
-  mockProviderSend: vi.fn<[unknown], Promise<string>>(),
-  mockProviderChat: vi.fn<[unknown], Promise<string>>(),
-  mockInitializeProvider: vi.fn(() => ({ send: mockProviderSend, chat: mockProviderChat })),
+  mockProviderSend: vi.fn(),
+  mockInitializeProvider: vi.fn((_config?: unknown) => ({ send: mockProviderSend })),
   mockGetSnapshot: vi.fn(),
   mockBuildPrompt: vi.fn(),
-  mockBuildAgenticPrompt: vi.fn(),
-  mockBuildObservationMessage: vi.fn(),
   mockParseLlmResponse: vi.fn(),
-  mockParseAgentStep: vi.fn(),
   mockResolveActionTargets: vi.fn(),
   mockExecuteAgentAction: vi.fn(),
   mockInstallInterceptors: vi.fn(),
+  mockInstallFixingSuggestionsInterceptor: vi.fn(),
   mockHealingAddEvent: vi.fn(),
   mockHealingGetReport: vi.fn(),
   mockHealingClear: vi.fn(),
   mockFormatHealingSummary: vi.fn(),
+  mockFixingSuggestionsAddSuggestion: vi.fn(),
+  mockFixingSuggestionsGetReport: vi.fn(),
+  mockFixingSuggestionsClear: vi.fn(),
+  mockFormatFixingSuggestions: vi.fn(),
   mockLogWarn: vi.fn(),
   mockLogInfo: vi.fn(),
   mockLogDebug: vi.fn(),
@@ -47,40 +49,48 @@ const {
 }));
 
 vi.mock('../../providers/index.js', () => ({
-  initializeProvider: (...args: unknown[]) => mockInitializeProvider(...args),
+  initializeProvider: (...args: unknown[]) => mockInitializeProvider(...(args as [unknown])),
 }));
 
 vi.mock('../../scripts/get-snapshot.js', () => ({
-  getSnapshot: (...args: unknown[]) => mockGetSnapshot(...args),
+  getSnapshot: (...args: unknown[]) => mockGetSnapshot(...(args as [unknown, unknown?])),
 }));
 
 vi.mock('../../prompts/index.js', () => ({
-  buildPrompt: (...args: unknown[]) => mockBuildPrompt(...args),
-  buildAgenticPrompt: (...args: unknown[]) => mockBuildAgenticPrompt(...args),
-  buildObservationMessage: (...args: unknown[]) => mockBuildObservationMessage(...args),
+  buildPrompt: (...args: unknown[]) => mockBuildPrompt(...(args as [string, string, number, unknown])),
 }));
 
 vi.mock('../../commands/parse-llm-response.js', () => ({
-  parseLlmResponse: (...args: unknown[]) => mockParseLlmResponse(...args),
-  parseAgentStep: (...args: unknown[]) => mockParseAgentStep(...args),
-  resolveActionTargets: (...args: unknown[]) => mockResolveActionTargets(...args),
+  parseLlmResponse: (...args: unknown[]) => mockParseLlmResponse(...(args as [string, number])),
+  resolveActionTargets: (...args: unknown[]) => mockResolveActionTargets(...(args as [unknown, unknown])),
 }));
 
 vi.mock('../../commands/execute-agent-action.js', () => ({
-  executeAgentAction: (...args: unknown[]) => mockExecuteAgentAction(...args),
+  executeAgentAction: (...args: unknown[]) => mockExecuteAgentAction(...(args as [unknown, unknown])),
 }));
 
 vi.mock('../../healing/interceptor.js', () => ({
-  installInterceptors: (...args: unknown[]) => mockInstallInterceptors(...args),
+  installInterceptors: (...args: unknown[]) => mockInstallInterceptors(...(args as [unknown, unknown, unknown])),
+  installFixingSuggestionsInterceptor: (...args: unknown[]) =>
+    mockInstallFixingSuggestionsInterceptor(...(args as [unknown, unknown, unknown])),
 }));
 
 vi.mock('../../healing/report.js', () => ({
   healingReport: {
-    addEvent: (...args: unknown[]) => mockHealingAddEvent(...args),
-    getReport: (...args: unknown[]) => mockHealingGetReport(...args),
-    clear: (...args: unknown[]) => mockHealingClear(...args),
+    addEvent: (...args: unknown[]) => mockHealingAddEvent(...(args as [unknown])),
+    getReport: () => mockHealingGetReport(),
+    clear: () => mockHealingClear(),
   },
-  formatHealingSummary: (...args: unknown[]) => mockFormatHealingSummary(...args),
+  formatHealingSummary: (...args: unknown[]) => mockFormatHealingSummary(...(args as [unknown])),
+}));
+
+vi.mock('../../healing/fixing-suggestions.js', () => ({
+  fixingSuggestionsStore: {
+    addSuggestion: (...args: unknown[]) => mockFixingSuggestionsAddSuggestion(...(args as [unknown])),
+    getReport: () => mockFixingSuggestionsGetReport(),
+    clear: () => mockFixingSuggestionsClear(),
+  },
+  formatFixingSuggestions: (...args: unknown[]) => mockFormatFixingSuggestions(...(args as [unknown])),
 }));
 
 vi.mock('@wdio/logger', () => ({
@@ -90,7 +100,7 @@ vi.mock('@wdio/logger', () => ({
 // ── Imports ───────────────────────────────────────────────────
 
 import AgentService from '../../services/agent.service.js';
-import type { AgentResult, HealConfig } from '../../types/index.js';
+import type { AgentResult, HealConfig, FixingSuggestionsConfig } from '../../types/index.js';
 
 // ── Constants ─────────────────────────────────────────────────
 
@@ -113,45 +123,39 @@ function createMockBrowser(overrides: Record<string, unknown> = {}) {
 
 function resetAllMocks(): void {
   const fns = [
-    mockProviderSend, mockProviderChat, mockInitializeProvider,
-    mockGetSnapshot, mockBuildPrompt, mockBuildAgenticPrompt,
-    mockBuildObservationMessage, mockParseLlmResponse, mockParseAgentStep,
-    mockResolveActionTargets, mockExecuteAgentAction, mockInstallInterceptors,
+    mockProviderSend, mockInitializeProvider,
+    mockGetSnapshot, mockBuildPrompt,
+    mockParseLlmResponse, mockResolveActionTargets,
+    mockExecuteAgentAction, mockInstallInterceptors,
+    mockInstallFixingSuggestionsInterceptor,
     mockHealingAddEvent, mockHealingGetReport, mockHealingClear,
-    mockFormatHealingSummary, mockLogWarn, mockLogInfo, mockLogDebug, mockLogError,
+    mockFormatHealingSummary,
+    mockFixingSuggestionsAddSuggestion, mockFixingSuggestionsGetReport, mockFixingSuggestionsClear,
+    mockFormatFixingSuggestions,
+    mockLogWarn, mockLogInfo, mockLogDebug, mockLogError,
   ];
   fns.forEach(f => f.mockReset());
 }
 
 function setDefaults(): void {
-  mockInitializeProvider.mockReturnValue({ send: mockProviderSend, chat: mockProviderChat });
+  mockInitializeProvider.mockReturnValue({ send: mockProviderSend });
   mockGetSnapshot.mockResolvedValue(SNAPSHOT_RESULT);
   mockProviderSend.mockResolvedValue('[{"action":"CLICK","target":"e1"}]');
-  mockProviderChat.mockResolvedValue(JSON.stringify({
-    reasoning: 'clicking login',
-    actions: [{ action: 'CLICK', target: 'e1' }],
-    done: true,
-  }));
   mockParseLlmResponse.mockReturnValue([{ type: 'CLICK', target: 'button*=Login' }]);
-  mockParseAgentStep.mockReturnValue({
-    actions: [{ type: 'CLICK', target: 'button*=Login' }],
-    done: true,
-    reasoning: 'found it',
-  });
   mockResolveActionTargets.mockImplementation((actions: unknown[]) => actions);
   mockExecuteAgentAction.mockResolvedValue({ action: { type: 'CLICK', target: 'button*=Login' }, success: true });
   mockBuildPrompt.mockReturnValue({ system: 'sys', user: 'usr' });
-  mockBuildAgenticPrompt.mockReturnValue({ system: 'agentic-sys', user: 'agentic-usr' });
-  mockBuildObservationMessage.mockReturnValue('## Observation\n...');
   mockHealingGetReport.mockReturnValue({ totalEvents: 0, fixableCount: 0, manualReviewCount: 0, events: [] });
+  mockFixingSuggestionsGetReport.mockReturnValue({ totalEvents: 0, suggestions: [] });
 }
 
 // ── Tests ─────────────────────────────────────────────────────
 
 describe('AgentService', () => {
   let browser: WebdriverIO.Browser;
-  let agentCommand: (prompt: string, options?: { maxSteps?: number; maxActions?: number }) => Promise<AgentResult>;
+  let agentCommand: (prompt: string, options?: { maxActions?: number }) => Promise<AgentResult>;
   let getHealingReportCommand: () => Promise<unknown>;
+  let getFixingSuggestionsCommand: () => Promise<unknown>;
 
   let registeredCommands: Record<string, Function> = {};
 
@@ -172,6 +176,9 @@ describe('AgentService', () => {
 
     getHealingReportCommand = (() =>
       registeredCommands['getHealingReport']?.()) as typeof getHealingReportCommand;
+
+    getFixingSuggestionsCommand = (() =>
+      registeredCommands['getFixingSuggestions']?.()) as typeof getFixingSuggestionsCommand;
   });
 
   // ── Constructor ─────────────────────────────────────────────
@@ -184,8 +191,6 @@ describe('AgentService', () => {
         expect.objectContaining({
           schema: 'openai',
           maxActions: 1,
-          maxSteps: 1,
-          contextWindow: 3,
           timeout: 30000,
           maxRetries: 2,
           maxOutputTokens: 1024,
@@ -196,18 +201,14 @@ describe('AgentService', () => {
     it('accepts custom config overrides', () => {
       const service = new AgentService({
         schema: 'anthropic',
-        maxSteps: 5,
         maxActions: 3,
-        contextWindow: 2,
         maxSnapshotElements: 40,
       });
       service.before({} as WebdriverIO.Capabilities, [], browser);
       expect(mockInitializeProvider).toHaveBeenCalledWith(
         expect.objectContaining({
           schema: 'anthropic',
-          maxSteps: 5,
           maxActions: 3,
-          contextWindow: 2,
           maxSnapshotElements: 40,
         }),
       );
@@ -217,11 +218,12 @@ describe('AgentService', () => {
   // ── before() hook ───────────────────────────────────────────
 
   describe('before() hook', () => {
-    it('registers agent and getHealingReport commands', () => {
+    it('registers agent, getHealingReport, and getFixingSuggestions commands', () => {
       const service = new AgentService();
       service.before({} as WebdriverIO.Capabilities, [], browser);
       expect(browser.addCommand).toHaveBeenCalledWith('agent', expect.any(Function));
       expect(browser.addCommand).toHaveBeenCalledWith('getHealingReport', expect.any(Function));
+      expect(browser.addCommand).toHaveBeenCalledWith('getFixingSuggestions', expect.any(Function));
     });
 
     it('clears healing report', () => {
@@ -252,22 +254,42 @@ describe('AgentService', () => {
       service.before({} as WebdriverIO.Capabilities, [], browser);
       expect(mockInstallInterceptors).not.toHaveBeenCalled();
     });
+
+    it('clears fixing suggestions store', () => {
+      const service = new AgentService();
+      service.before({} as WebdriverIO.Capabilities, [], browser);
+      expect(mockFixingSuggestionsClear).toHaveBeenCalled();
+    });
+
+    it('installs fixing suggestions interceptor when configured', () => {
+      const config: FixingSuggestionsConfig = { enabled: true, commands: ['click', 'tap'] };
+      const service = new AgentService({ fixingSuggestions: config });
+      service.before({} as WebdriverIO.Capabilities, [], browser);
+      expect(mockInstallFixingSuggestionsInterceptor).toHaveBeenCalledWith(
+        browser,
+        config,
+        expect.any(Function),
+      );
+    });
+
+    it('does not install fixing suggestions interceptor when disabled', () => {
+      const config: FixingSuggestionsConfig = { enabled: false, commands: [] };
+      const service = new AgentService({ fixingSuggestions: config });
+      service.before({} as WebdriverIO.Capabilities, [], browser);
+      expect(mockInstallFixingSuggestionsInterceptor).not.toHaveBeenCalled();
+    });
   });
 
-  // ── Single-pass mode ────────────────────────────────────────
+  // ── Agent execution ─────────────────────────────────────────
 
-  describe('single-pass mode (maxSteps=1)', () => {
+  describe('agent command', () => {
     it('executes actions and returns AgentResult', async () => {
       const service = new AgentService();
       service.before({} as WebdriverIO.Capabilities, [], browser);
 
       const result = await agentCommand('click the login button');
 
-      expect(result.goalAchieved).toBe(true);
-      expect(result.totalSteps).toBe(1);
       expect(result.actions).toHaveLength(1);
-      expect(result.steps).toHaveLength(1);
-      expect(result.steps[0].done).toBe(true);
       expect(mockGetSnapshot).toHaveBeenCalled();
       expect(mockBuildPrompt).toHaveBeenCalled();
       expect(mockProviderSend).toHaveBeenCalled();
@@ -305,140 +327,13 @@ describe('AgentService', () => {
         SNAPSHOT_RESULT.elements,
       );
     });
-  });
 
-  // ── Agentic loop mode ───────────────────────────────────────
-
-  describe('agentic loop mode (maxSteps > 1)', () => {
-    it('runs multi-step ReAct loop until done=true', async () => {
-      mockParseAgentStep
-        .mockReturnValueOnce({
-          actions: [{ type: 'SET_VALUE' as const, target: '#email', value: 'user@test.com' }],
-          done: false,
-          reasoning: 'filling email',
-        })
-        .mockReturnValueOnce({
-          actions: [{ type: 'CLICK' as const, target: '#submit' }],
-          done: true,
-          reasoning: 'clicking submit',
-        });
-
-      const service = new AgentService({ maxSteps: 3 });
-      service.before({} as WebdriverIO.Capabilities, [], browser);
-
-      const result = await agentCommand('fill form and submit');
-
-      expect(result.goalAchieved).toBe(true);
-      expect(result.totalSteps).toBe(2);
-      expect(result.actions).toHaveLength(2);
-      expect(mockProviderChat).toHaveBeenCalledTimes(2);
-      expect(mockBuildObservationMessage).toHaveBeenCalledTimes(1);
-      expect(mockGetSnapshot).toHaveBeenCalledTimes(2);
-    });
-
-    it('stops when maxSteps is reached without done flag', async () => {
-      mockParseAgentStep.mockReturnValue({
-        actions: [{ type: 'CLICK' as const, target: '#next' }],
-        done: false,
-        reasoning: 'clicking next',
-      });
-
-      const service = new AgentService({ maxSteps: 2 });
-      service.before({} as WebdriverIO.Capabilities, [], browser);
-
-      const result = await agentCommand('keep clicking next');
-
-      expect(result.goalAchieved).toBe(false);
-      expect(result.totalSteps).toBe(2);
-      expect(mockProviderChat).toHaveBeenCalledTimes(2);
-    });
-
-    it('runs without crash with tight contextWindow', async () => {
-      mockParseAgentStep.mockReturnValue({
-        actions: [{ type: 'CLICK' as const, target: '#btn' }],
-        done: false,
-      });
-
-      const service = new AgentService({ maxSteps: 4, contextWindow: 1 });
-      service.before({} as WebdriverIO.Capabilities, [], browser);
-
-      const result = await agentCommand('repeat');
-      expect(result.totalSteps).toBe(4);
-      expect(result.goalAchieved).toBe(false);
-    });
-
-    it('recovers from a single parse error and continues', async () => {
-      mockParseAgentStep
-        .mockImplementationOnce(() => {
-          throw new Error('Invalid JSON');
-        })
-        .mockReturnValueOnce({
-          actions: [{ type: 'CLICK' as const, target: '#btn' }],
-          done: true,
-          reasoning: 'fixed output',
-        });
-
-      mockProviderChat
-        .mockResolvedValueOnce('bad json')
-        .mockResolvedValueOnce(JSON.stringify({
-          reasoning: 'fixed',
-          actions: [{ action: 'CLICK', target: 'e1' }],
-          done: true,
-        }));
-
-      const service = new AgentService({ maxSteps: 3 });
-      service.before({} as WebdriverIO.Capabilities, [], browser);
-
-      const result = await agentCommand('click the button');
-      expect(result.goalAchieved).toBe(true);
-    });
-
-    it('aborts after MAX_CONSECUTIVE_PARSE_ERRORS (3)', async () => {
-      mockParseAgentStep.mockImplementation(() => {
-        throw new Error('malformed output');
-      });
-
-      const service = new AgentService({ maxSteps: 10 });
-      service.before({} as WebdriverIO.Capabilities, [], browser);
-
-      await expect(agentCommand('do something')).rejects.toThrow(
-        'Agentic loop aborted: 3 consecutive parse errors',
-      );
-    });
-  });
-
-  // ── Per-call overrides ──────────────────────────────────────
-
-  describe('per-call overrides', () => {
-    it('overrides maxSteps to force agentic loop', async () => {
-      const service = new AgentService({ maxSteps: 1 });
-      service.before({} as WebdriverIO.Capabilities, [], browser);
-
-      mockParseAgentStep
-        .mockReturnValueOnce({ actions: [{ type: 'CLICK' as const, target: '#a' }], done: false })
-        .mockReturnValueOnce({ actions: [{ type: 'CLICK' as const, target: '#b' }], done: true });
-
-      const result = await agentCommand('multi-step task', { maxSteps: 3 });
-      expect(result.totalSteps).toBe(2);
-    });
-
-    it('overrides maxActions', async () => {
+    it('overrides maxActions per call', async () => {
       const service = new AgentService();
       service.before({} as WebdriverIO.Capabilities, [], browser);
 
       await agentCommand('do something', { maxActions: 5 });
       expect(mockParseLlmResponse).toHaveBeenCalledWith(expect.any(String), 5);
-    });
-
-    it('forces single-pass when maxSteps=1 on agentic config', async () => {
-      const service = new AgentService({ maxSteps: 3 });
-      service.before({} as WebdriverIO.Capabilities, [], browser);
-
-      const result = await agentCommand('simple click', { maxSteps: 1 });
-
-      expect(result.totalSteps).toBe(1);
-      expect(mockParseLlmResponse).toHaveBeenCalled();
-      expect(mockParseAgentStep).not.toHaveBeenCalled();
     });
   });
 
@@ -489,6 +384,46 @@ describe('AgentService', () => {
 
       expect(mockHealingClear).toHaveBeenCalled();
     });
+
+    it('emits fixing suggestions when suggestions exist', () => {
+      mockFixingSuggestionsGetReport.mockReturnValueOnce({
+        totalEvents: 2, suggestions: [],
+      });
+      mockFormatFixingSuggestions.mockReturnValueOnce('[FixingSuggestions] 2 suggestions');
+
+      const config: FixingSuggestionsConfig = { enabled: true, commands: ['click'] };
+      const service = new AgentService({ fixingSuggestions: config });
+      service.before({} as WebdriverIO.Capabilities, [], browser);
+      service.after(0, {} as WebdriverIO.Capabilities, []);
+
+      expect(mockLogError).toHaveBeenCalledWith('[FixingSuggestions] 2 suggestions');
+    });
+
+    it('skips fixing suggestions when no events', () => {
+      mockFixingSuggestionsGetReport.mockReturnValueOnce({
+        totalEvents: 0, suggestions: [],
+      });
+
+      const config: FixingSuggestionsConfig = { enabled: true, commands: ['click'] };
+      const service = new AgentService({ fixingSuggestions: config });
+      service.before({} as WebdriverIO.Capabilities, [], browser);
+      service.after(0, {} as WebdriverIO.Capabilities, []);
+
+      expect(mockFormatFixingSuggestions).not.toHaveBeenCalled();
+    });
+
+    it('clears fixing suggestions after emitting', () => {
+      mockFixingSuggestionsGetReport.mockReturnValueOnce({
+        totalEvents: 1, suggestions: [],
+      });
+
+      const config: FixingSuggestionsConfig = { enabled: true, commands: ['click'] };
+      const service = new AgentService({ fixingSuggestions: config });
+      service.before({} as WebdriverIO.Capabilities, [], browser);
+      service.after(0, {} as WebdriverIO.Capabilities, []);
+
+      expect(mockFixingSuggestionsClear).toHaveBeenCalled();
+    });
   });
 
   // ── Platform detection ──────────────────────────────────────
@@ -534,7 +469,7 @@ describe('AgentService', () => {
     });
   });
 
-  // ── getHealingReport command ─────────────────────────────────
+  // ── Commands ────────────────────────────────────────────────
 
   describe('getHealingReport command', () => {
     it('returns the current healing report', async () => {
@@ -548,6 +483,22 @@ describe('AgentService', () => {
       const report = await getHealingReportCommand();
       expect(report).toEqual({
         totalEvents: 2, fixableCount: 1, manualReviewCount: 1, events: [],
+      });
+    });
+  });
+
+  describe('getFixingSuggestions command', () => {
+    it('returns the current fixing suggestions report', async () => {
+      mockFixingSuggestionsGetReport.mockReturnValueOnce({
+        totalEvents: 3, suggestions: [],
+      });
+
+      const service = new AgentService();
+      service.before({} as WebdriverIO.Capabilities, [], browser);
+
+      const report = await getFixingSuggestionsCommand();
+      expect(report).toEqual({
+        totalEvents: 3, suggestions: [],
       });
     });
   });

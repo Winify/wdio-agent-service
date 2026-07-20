@@ -4,18 +4,18 @@ import type {
   AgentResult,
   AgentServiceConfig,
   ActionResult,
-  ChatMessage,
   LLMProvider,
   Platform,
 } from '../types';
 import 'webdriverio';
 import { initializeProvider } from '../providers';
 import { getSnapshot } from '../scripts/get-snapshot';
-import { buildAgenticPrompt, buildObservationMessage, buildPrompt } from '../prompts';
-import { parseAgentStep, parseLlmResponse, resolveActionTargets } from '../commands/parse-llm-response';
+import { buildPrompt } from '../prompts';
+import { parseLlmResponse, resolveActionTargets } from '../commands/parse-llm-response';
 import { executeAgentAction } from '../commands/execute-agent-action';
-import { installInterceptors } from '../healing/interceptor';
+import { installInterceptors, installFixingSuggestionsInterceptor } from '../healing/interceptor';
 import { healingReport, formatHealingSummary } from '../healing/report';
+import { fixingSuggestionsStore, formatFixingSuggestions } from '../healing/fixing-suggestions';
 import logger from '@wdio/logger';
 
 const log = logger('wdio-agent-service');
@@ -44,11 +44,10 @@ export default class AgentService implements Services.ServiceInstance {
       timeout: serviceOptions.timeout ?? 30000,
       maxRetries: serviceOptions.maxRetries ?? 2,
       maxOutputTokens: serviceOptions.maxOutputTokens ?? 1024,
-      maxSteps: serviceOptions.maxSteps ?? 1,
-      contextWindow: serviceOptions.contextWindow ?? 3,
       maxSnapshotElements: serviceOptions.maxSnapshotElements,
       send: serviceOptions.send,
       autoHeal: serviceOptions.autoHeal,
+      fixingSuggestions: serviceOptions.fixingSuggestions,
     };
   }
 
@@ -65,6 +64,16 @@ export default class AgentService implements Services.ServiceInstance {
       installInterceptors(browser, this.resolvedConfig.autoHeal, this.provider.send.bind(this.provider));
     }
 
+    // Install fixing suggestions interceptors if configured
+    fixingSuggestionsStore.clear();
+    if (this.resolvedConfig.fixingSuggestions?.enabled) {
+      installFixingSuggestionsInterceptor(
+        browser,
+        this.resolvedConfig.fixingSuggestions,
+        this.provider.send.bind(this.provider),
+      );
+    }
+
     // Register the main agent command
     browser.addCommand(
       'agent',
@@ -72,13 +81,22 @@ export default class AgentService implements Services.ServiceInstance {
         this.executeAgent(browser, prompt, options),
     );
 
+    // Register snapshot helper for debugging
+    browser.addCommand(
+      'snapshot',
+      async (options?: { maxElements?: number }) => getSnapshot(browser, { maxElements: options?.maxElements }),
+    );
+
     // Register healing report accessor
     browser.addCommand('getHealingReport', async () => healingReport.getReport());
+
+    // Register fixing suggestions accessor
+    browser.addCommand('getFixingSuggestions', async () => fixingSuggestionsStore.getReport());
 
     log.debug('[Agent] Service initialized with config:', this.resolvedConfig);
   }
 
-  // ── Agent dispatch ──────────────────────────────────────────
+  // ── Agent execution ──────────────────────────────────────────
 
   private async executeAgent(
     _browser: WebdriverIO.Browser,
@@ -86,34 +104,12 @@ export default class AgentService implements Services.ServiceInstance {
     options?: AgentCallOptions,
   ): Promise<AgentResult> {
     const platform = detectPlatform(_browser);
-    const maxSteps = options?.maxSteps ?? this.resolvedConfig.maxSteps!;
     const maxActions = options?.maxActions ?? this.resolvedConfig.maxActions!;
 
-    log.info(`[Agent] Prompt: "${prompt}" (platform: ${platform}, maxSteps: ${maxSteps})`);
+    log.info(`[Agent] Prompt: "${prompt}" (platform: ${platform})`);
 
-    // Single-pass fast path: one LLM call, no loop overhead
-    if (maxSteps === 1) {
-      return this.executeSinglePass(_browser, prompt, platform, maxActions);
-    }
-
-    return this.executeAgenticLoop(_browser, prompt, platform, maxSteps, maxActions);
-  }
-
-  // ── Single-pass mode ────────────────────────────────────────
-
-  /**
-   * Single-pass mode: one LLM call, execute actions, return.
-   * Same behavior as the original implementation. No loop, no observation.
-   */
-  private async executeSinglePass(
-    _browser: WebdriverIO.Browser,
-    prompt: string,
-    platform: Platform,
-    maxActions: number,
-  ): Promise<AgentResult> {
     const snapshot = await getSnapshot(_browser, { maxElements: this.resolvedConfig.maxSnapshotElements });
-
-    log.debug('[Agent] Single-pass mode');
+    log.debug('[Agent] Snapshot taken, building LLM prompt');
 
     const llmPrompt = buildPrompt(snapshot.text, prompt, maxActions, platform);
     const response = await this.provider.send(llmPrompt);
@@ -121,178 +117,53 @@ export default class AgentService implements Services.ServiceInstance {
 
     // Resolve eN virtual IDs → real selectors
     const actions = resolveActionTargets(rawActions, snapshot.elements);
-
     log.debug(`[Agent] Parsed ${actions.length} action(s)`);
 
     const results: ActionResult[] = [];
     for (const action of actions) {
       const result = await executeAgentAction(_browser, action);
       results.push(result);
-      // In single-pass mode, throw on failure for backward compat
       if (!result.success) {
         throw new Error(`Action ${result.action.type} "${result.action.target}" failed: ${result.error ?? 'unknown error'}`);
       }
     }
 
-    return {
-      actions,
-      steps: [{ step: 1, actions: results, done: true }],
-      goalAchieved: true,
-      totalSteps: 1,
-    };
+    return { actions };
   }
 
-  // ── Agentic ReAct loop ──────────────────────────────────────
+  // ── after() hook ─────────────────────────────────────────────
 
-  /**
-   * DOM-based agentic loop: observe elements → think → act → repeat.
-   * Follows the ReAct (Reasoning + Acting) pattern.
-   */
-  private async executeAgenticLoop(
-    _browser: WebdriverIO.Browser,
-    prompt: string,
-    platform: Platform,
-    maxSteps: number,
-    maxActions: number,
-  ): Promise<AgentResult> {
-    const contextWindow = this.resolvedConfig.contextWindow!;
-    const MAX_CONSECUTIVE_PARSE_ERRORS = 3;
-
-    log.info(`[Agent] Agentic loop mode (maxSteps: ${maxSteps})`);
-
-    // Get initial page state
-    const initialSnapshot = await getSnapshot(_browser, { maxElements: this.resolvedConfig.maxSnapshotElements });
-    const agenticPrompt = buildAgenticPrompt(initialSnapshot.text, prompt, maxActions, platform);
-
-    // Build conversation
-    const messages: ChatMessage[] = [
-      { role: 'system', content: agenticPrompt.system },
-      { role: 'user', content: agenticPrompt.user },
-    ];
-
-    // Store the initial elements map for eN resolution
-    let currentElements = initialSnapshot.elements;
-
-    const allActions: AgentResult['actions'] = [];
-    const allSteps: AgentResult['steps'] = [];
-    let done = false;
-    let step = 0;
-    let parseErrors = 0;
-
-    while (!done && step < maxSteps) {
-      log.info(`[Agent] Step ${step + 1}/${maxSteps} — sending to LLM...`);
-
-      // Get LLM response
-      const response = await this.provider.chat(messages);
-
-      let agentStep;
-      try {
-        agentStep = parseAgentStep(response);
-        parseErrors = 0;   // reset on successful parse
-        step++;             // only count steps that produced parseable output
-      } catch (parseError) {
-        parseErrors++;
-        if (parseErrors >= MAX_CONSECUTIVE_PARSE_ERRORS) {
-          throw new Error(`Agentic loop aborted: ${parseErrors} consecutive parse errors. Last error: ${(parseError as Error).message}`);
-        }
-        log.warn(`[Agent] Parse error ${parseErrors}/${MAX_CONSECUTIVE_PARSE_ERRORS}: ${(parseError as Error).message}`);
-        messages.push({ role: 'assistant', content: response });
-        messages.push({
-          role: 'user',
-          content: `Your response could not be parsed: ${(parseError as Error).message}\n\nPlease respond with ONLY a valid JSON object in the required format:\n{"reasoning": "...", "actions": [...], "done": true/false}`,
-        });
-        this.trimConversation(messages, contextWindow);
-        continue;
-      }
-
-      const actions = agentStep.actions.slice(0, maxActions);
-      if (agentStep.actions.length > maxActions) {
-        log.warn(`[Agent] Step ${step}: limiting ${agentStep.actions.length} proposed actions to maxActions=${maxActions}`);
-      }
-      log.info(`[Agent] Step ${step}: ${actions.length} action(s), done=${agentStep.done}${agentStep.reasoning ? ` — ${agentStep.reasoning}` : ''}`);
-
-      // Append assistant message to conversation
-      messages.push({ role: 'assistant', content: response });
-
-      // Resolve eN virtual IDs → real selectors
-      const resolvedActions = resolveActionTargets(actions, currentElements);
-
-      // Execute actions
-      const stepResults: ActionResult[] = [];
-      for (const action of resolvedActions) {
-        const result = await executeAgentAction(_browser, action);
-        stepResults.push(result);
-        allActions.push(action);
-        log.info(`[Agent]   ${action.type} "${action.target}"${action.value ? ` = "${action.value}"` : ''} → ${result.success ? 'OK' : `FAIL: ${result.error}`}`);
-      }
-
-      allSteps.push({ step, actions: stepResults, done: agentStep.done });
-
-      if (agentStep.done) {
-        done = true;
-        break;
-      }
-
-      // Re-snapshot page elements
-      const updatedSnapshot = await getSnapshot(_browser, { maxElements: this.resolvedConfig.maxSnapshotElements });
-      currentElements = updatedSnapshot.elements;
-
-      // Build observation message
-      const observation = buildObservationMessage(stepResults, updatedSnapshot.text, step, maxSteps);
-      messages.push({ role: 'user', content: observation });
-
-      // Trim conversation to sliding window
-      this.trimConversation(messages, contextWindow);
-    }
-
-    const goalAchieved = done;
-    log.info(`[Agent] Loop finished: ${step} step(s), goalAchieved=${goalAchieved}`);
-
-    return { actions: allActions, steps: allSteps, goalAchieved, totalSteps: step };
-  }
-
-  // ── Healing summary ─────────────────────────────────────────
-
-  /**
-   * After all specs complete, emit the healing summary.
-   * Uses after() hook — called in worker; visible via WDIO logs.
-   */
   after(
     _result: number,
     _capabilities: WebdriverIO.Capabilities,
     _specs: string[],
   ): void {
-    if (!this.resolvedConfig.autoHeal?.enabled) return;
-
-    try {
-      const report = healingReport.getReport();
-      if (report.totalEvents === 0) return;
-
-      log.error(formatHealingSummary(report));
-    } catch (err) {
-      log.error('[Healing] Failed to generate healing report:', (err as Error).message);
+    // Emit healing summary
+    if (this.resolvedConfig.autoHeal?.enabled) {
+      try {
+        const report = healingReport.getReport();
+        if (report.totalEvents > 0) {
+          log.error(formatHealingSummary(report));
+        }
+      } catch (err) {
+        log.error('[Healing] Failed to generate healing report:', (err as Error).message);
+      } finally {
+        healingReport.clear();
+      }
     }
 
-    healingReport.clear();
-  }
-
-  // ── Conversation trimming ────────────────────────────────────
-
-  /**
-   * Trim conversation to sliding window: keep system + initial user + last N step-pairs.
-   * A step-pair = (assistant response, user observation).
-   */
-  private trimConversation(messages: ChatMessage[], contextWindow: number): void {
-    // Structure: [system, initial_user, ...step_pairs]
-    // Each step-pair is 2 messages: assistant + user observation
-    const headerCount = 2; // system + initial user
-    const pairSize = 2;
-    const maxPairs = contextWindow;
-    const totalPairMessages = messages.length - headerCount;
-
-    if (totalPairMessages > maxPairs * pairSize) {
-      const excessMessages = totalPairMessages - (maxPairs * pairSize);
-      messages.splice(headerCount, excessMessages);
+    // Emit fixing suggestions summary
+    if (this.resolvedConfig.fixingSuggestions?.enabled) {
+      try {
+        const report = fixingSuggestionsStore.getReport();
+        if (report.totalEvents > 0) {
+          log.error(formatFixingSuggestions(report));
+        }
+      } catch (err) {
+        log.error('[FixingSuggestions] Failed to generate report:', (err as Error).message);
+      } finally {
+        fixingSuggestionsStore.clear();
+      }
     }
   }
 }

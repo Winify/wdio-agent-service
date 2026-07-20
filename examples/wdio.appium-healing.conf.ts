@@ -1,11 +1,6 @@
 import process from 'node:process';
 
-// Usage:
-//   APP=/path/to/app.apk npx wdio wdio.appium.conf.ts                (APK install)
-//   APP_PACKAGE=com.android.settings APP_ACTIVITY=.Settings \        (system app)
-//     npx wdio wdio.appium.conf.ts
-//   APP_PACKAGE=io.appium.android.apis APP_ACTIVITY=.ApiDemos \      (pre-installed)
-//     npx wdio wdio.appium.conf.ts
+// Same usage as wdio.appium.conf.ts but with autoHeal enabled.
 
 const capabilities: Record<string, unknown> = {
   platformName: 'Android',
@@ -25,7 +20,10 @@ if (process.env.APP_PACKAGE) {
 
 export const config: WebdriverIO.Config = {
   tsConfigPath: './tsconfig.json',
-  specs: ['./test/specs/**/mobile-agentic*.spec.ts'],
+  specs: [
+    './test/specs/**/mobile-self-healing*.spec.ts',
+    './test/specs/**/mobile-healing-report*.spec.ts',
+  ],
   exclude: [],
 
   hostname: process.env.APPIUM_HOST || 'localhost',
@@ -52,6 +50,11 @@ export const config: WebdriverIO.Config = {
         token: process.env.AGENT_API_KEY,
         maxActions: 3,
         timeout: 60000,
+        autoHeal: {
+          enabled: true,
+          commands: ['click', 'tap', 'setValue'],
+          maxAttempts: 2,
+        },
       },
     ],
   ],

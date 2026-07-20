@@ -4,6 +4,8 @@ import logger from '@wdio/logger';
 
 const log = logger('wdio-agent-service');
 
+// ── Heal selector (runtime self-healing) ────────────────────────
+
 /**
  * Attempt to heal a broken selector by asking the LLM to find
  * the intended element in the current page snapshot.
@@ -34,13 +36,12 @@ export async function healSelector(
 
       // Ask the LLM to find the intended element
       const systemPrompt = [
-        'You are a test healing assistant. A test command failed because an element selector changed.',
+        'You are a test healing assistant.',
+        'Given a broken selector and a list of page elements, find the element most likely intended.',
         '',
-        'Given the broken selector and the current page snapshot, find the element most likely intended.',
-        'Elements have virtual IDs (e1, e2, e3...). Use the eN ID as the target_id.',
-        '',
-        'Respond with ONLY a JSON object:',
-        '{"target_id": "eN", "confidence": "high|medium|low", "reasoning": "why you chose this element"}',
+        'Each element:  eN: name → selector',
+        'Match the broken selector to the closest element name or selector.',
+        'Return ONLY: {"target_id":"eN"}',
       ].join('\n');
 
       const userPrompt = [
@@ -58,6 +59,7 @@ export async function healSelector(
       ].join('\n');
 
       const rawResponse = await send({ system: systemPrompt, user: userPrompt });
+      log.warn(`[Auto-Heal] LLM raw response: ${rawResponse.substring(0, 300)}`);
       const parsed = parseHealingResponse(rawResponse);
 
       if (parsed?.target_id) {
@@ -83,6 +85,72 @@ export async function healSelector(
 
   return null;
 }
+
+// ── Suggest fix (passive, no retry) ─────────────────────────────
+
+/**
+ * Lightweight fix suggestion — no retry loop.
+ * Takes a snapshot, asks the LLM what selector would likely fix the broken one.
+ * Returns the suggested selector and reasoning, or null if the LLM couldn't help.
+ */
+export async function suggestFix(
+  browser: WebdriverIO.Browser,
+  brokenSelector: string,
+  actionType: string,
+  send: (prompt: PromptInput) => Promise<string>,
+): Promise<{ selector: string; reasoning?: string } | null> {
+  try {
+    const { text, elements } = await getSnapshot(browser);
+    if (!text || Object.keys(elements).length === 0) {
+      log.warn('[FixingSuggestions] Snapshot is empty, cannot suggest fix');
+      return null;
+    }
+
+    const systemPrompt = [
+      'You are a test selector assistant.',
+      'Given a broken selector and a list of page elements, find the element most likely intended.',
+      '',
+      'Each element:  eN: name → selector',
+      'Match the broken selector to the closest element name or selector.',
+      'Return ONLY: {"target_id":"eN","reasoning":"<why this matches>"}',
+    ].join('\n');
+
+    const userPrompt = [
+      '<broken_selector>',
+      brokenSelector,
+      '</broken_selector>',
+      '',
+      '<intended_action>',
+      actionType,
+      '</intended_action>',
+      '',
+      '<elements>',
+      text,
+      '</elements>',
+    ].join('\n');
+
+    const rawResponse = await send({ system: systemPrompt, user: userPrompt });
+    log.debug(`[FixingSuggestions] LLM response: ${rawResponse.substring(0, 300)}`);
+    const parsed = parseHealingResponse(rawResponse);
+
+    if (parsed?.target_id) {
+      const el = elements[parsed.target_id];
+      if (el) {
+        const suggestedSelector = el.qualifiedSelector ?? el.selector;
+        return {
+          selector: suggestedSelector,
+          reasoning: parsed.reasoning,
+        };
+      }
+    }
+  } catch (error) {
+    log.warn(`[FixingSuggestions] Failed to get suggestion: ${(error as Error).message}`);
+  }
+
+  return null;
+}
+
+// ── Shared response parser ──────────────────────────────────────
 
 interface HealingResponse {
   target_id?: string;
