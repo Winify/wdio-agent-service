@@ -4,8 +4,7 @@
   "type": "module",
   "scripts": {
     "test": "wdio wdio.conf.ts",
-    "test:mobile": "wdio wdio.appium.conf.ts",
-    "test:mobile-healing": "wdio wdio.appium-healing.conf.ts"
+    "test:mobile": "wdio wdio.appium.conf.ts"
   },
   "devDependencies": {
     "@wdio/cli": "^9.22.0",

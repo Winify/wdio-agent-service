@@ -1,23 +1,52 @@
-describe('wdio-agent-service', () => {
-  it('should navigate and click using natural language', async () => {
-    const navResult = await browser.agent('go to https://the-internet.herokuapp.com/');
-    expect(navResult.actions.some((a) => a.type === 'NAVIGATE')).toBe(true);
+/**
+ * Use Case 1: browser.agent(prompt) — Natural Language Command Execution
+ *
+ * Single-pass: one LLM call → N actions. Fast, predictable.
+ */
 
-    const clickResult = await browser.agent('click on JavaScript Alerts');
-    expect(clickResult.actions.some((a) => a.type === 'CLICK')).toBe(true);
+describe('Using natural language', () => {
+
+  const BASE = 'https://the-internet.herokuapp.com';
+
+  it('navigates to a URL via NAVIGATE action', async () => {
+    const result = await browser.agent(`go to ${BASE}/`);
+
+    expect(result.actions.length).toBeGreaterThanOrEqual(1);
+    expect(result.actions[0].type).toBe('NAVIGATE');
+  });
+
+  it('clicks an element via CLICK action', async () => {
+    await browser.url(BASE + '/');
+
+    const result = await browser.agent('click on JavaScript Alerts');
+
+    expect(result.actions.length).toBeGreaterThanOrEqual(1);
+    expect(result.actions[0].type).toBe('CLICK');
     await expect(browser).toHaveUrl('/javascript_alerts', { containing: true });
   });
 
-  it('should fill in form fields', async () => {
-    await browser.agent('go to https://the-internet.herokuapp.com/');
-    await browser.agent('click on Form Authentication');
+  it('types into a form field via SET_VALUE action', async () => {
+    await browser.url(BASE + '/login');
 
-    const result = await browser.agent('fill in admin into username field and password into password field');
+    const result = await browser.agent('type "tomsmith" into the username field');
 
-    expect(result.actions.some((a) => a.type === 'SET_VALUE')).toBe(true);
-    const setValueAction = result.actions.find((a) => a.type === 'SET_VALUE');
-    expect(setValueAction?.value?.toLowerCase()).toContain('admin');
-    await expect($('#username')).toHaveValue('admin');
-    await expect($('#password')).toHaveValue('password');
+    expect(result.actions.length).toBeGreaterThanOrEqual(1);
+    expect(result.actions[0].type).toBe('SET_VALUE');
+    expect(result.actions[0].value).toContain('tomsmith');
+    await expect($('#username')).toHaveValue('tomsmith');
+  });
+
+  it('returns multiple actions in a single pass', async () => {
+    await browser.url(BASE + '/login');
+
+    const result = await browser.agent(
+      'fill "tomsmith" into username and "SuperSecretPassword!" into password',
+      { maxActions: 2 },
+    );
+
+    expect(result.actions.length).toBeGreaterThanOrEqual(1);
+
+    await expect($('#username')).toHaveValue('tomsmith');
+    await expect($('#password')).toHaveValue('SuperSecretPassword!');
   });
 });

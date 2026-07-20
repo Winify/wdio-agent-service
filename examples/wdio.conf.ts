@@ -5,7 +5,7 @@ export const config: WebdriverIO.Config = {
     './test/specs/**/*.spec.ts',
   ],
   exclude: [
-    './test/specs/**/mobile-*.spec.ts',
+    './test/specs/**/*-mobile.spec.ts',
   ],
 
   maxInstances: 1,

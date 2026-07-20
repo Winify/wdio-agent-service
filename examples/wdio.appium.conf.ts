@@ -1,31 +1,8 @@
 import process from 'node:process';
 
-// Usage:
-//   APP=/path/to/app.apk npx wdio wdio.appium.conf.ts                (APK install)
-//   APP_PACKAGE=com.android.settings APP_ACTIVITY=.Settings \        (system app)
-//     npx wdio wdio.appium.conf.ts
-//   APP_PACKAGE=io.appium.android.apis APP_ACTIVITY=.ApiDemos \      (pre-installed)
-//     npx wdio wdio.appium.conf.ts
-
-const capabilities: Record<string, unknown> = {
-  platformName: 'Android',
-  'appium:deviceName': process.env.DEVICE_NAME || 'emulator-5554',
-  'appium:platformVersion': process.env.PLATFORM_VERSION || '17',
-  'appium:automationName': 'UiAutomator2',
-  'appium:autoGrantPermissions': true,
-  'appium:autoAcceptAlerts': true,
-};
-
-if (process.env.APP_PACKAGE) {
-  capabilities['appium:appPackage'] = process.env.APP_PACKAGE;
-  capabilities['appium:appActivity'] = process.env.APP_ACTIVITY || '.Main';
-} else if (process.env.APP) {
-  capabilities['appium:app'] = process.env.APP;
-}
-
 export const config: WebdriverIO.Config = {
   tsConfigPath: './tsconfig.json',
-  specs: ['./test/specs/**/mobile-agentic*.spec.ts'],
+  specs: ['./test/specs/**/*-mobile.spec.ts'],
   exclude: [],
 
   hostname: process.env.APPIUM_HOST || 'localhost',
@@ -34,11 +11,21 @@ export const config: WebdriverIO.Config = {
 
   maxInstances: 1,
 
-  capabilities: [capabilities],
+  capabilities: [{
+    platformName: 'Android',
+    'appium:deviceName': process.env.DEVICE_NAME || 'emulator-5554',
+    'appium:platformVersion': process.env.PLATFORM_VERSION || '17',
+    'appium:automationName': 'UiAutomator2',
+    'appium:autoGrantPermissions': true,
+    'appium:autoAcceptAlerts': true,
 
-  logLevel: 'info',
+    'appium:appPackage': 'com.google.android.deskclock',
+    'appium:appActivity': 'com.android.deskclock.DeskClock',
+  }],
+
+  logLevel: 'debug',
   bail: 0,
-  waitforTimeout: 10000,
+  waitforTimeout: 5000,
   connectionRetryTimeout: 120000,
   connectionRetryCount: 3,
 
@@ -49,9 +36,9 @@ export const config: WebdriverIO.Config = {
         schema: process.env.AGENT_SCHEMA || 'openai',
         providerUrl: process.env.PROVIDER_URL || 'http://localhost:1234',
         model: process.env.AGENT_MODEL || 'qwen/qwen3.5-4b',
-        token: process.env.AGENT_API_KEY,
         maxActions: 3,
-        timeout: 60000,
+        timeout: 10_000,
+        autoHeal: { enabled: true, commands: ['tap', 'click'], maxAttempts: 2 },
       },
     ],
   ],

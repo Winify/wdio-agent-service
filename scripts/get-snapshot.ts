@@ -56,6 +56,7 @@ export async function getSnapshot(
     }
 
     log.debug(`[Agent] Snapshot captured: ${sliced.length} elements${limit ? ` (trimmed from ${rawElements.length})` : ''}`);
+    log.debug(text);
     return { text, elements: elementsMap };
   } catch (error) {
     log.error('[Agent] Snapshot failed:', error);

@@ -32,10 +32,10 @@ This hybrid approach lets you:
 ## Installation
 
 ```bash
-npm install wdio-agent-service @wdio/elements
+npm install wdio-agent-service
 ```
 
-**Peer dependencies:** `webdriverio >=9.0.0`, `@wdio/elements >=1.0.0`
+**Peer dependencies:** `webdriverio >=9.0.0`, `@wdio/elements >=1.1.0`
 
 ## Configuration
 
@@ -48,8 +48,7 @@ export const config: WebdriverIO.Config = {
     ['agent', {
       schema: 'openai', // OpenAI Chat Completions; defaults to local Ollama
       model: 'qwen2.5-coder:7b',
-      maxActions: 2,
-      maxSteps: 1,          // 1 = single-pass, >1 = ReAct loop
+      maxActions: 2
     }]
   ],
 };
@@ -57,21 +56,21 @@ export const config: WebdriverIO.Config = {
 
 ### Config Options
 
-| Option           | Type                                                          | Default              | Description                                                                                                                |
-|------------------|---------------------------------------------------------------|----------------------|----------------------------------------------------------------------------------------------------------------------------|
-| `schema`         | `'anthropic' \| 'openai'`                                    | `'openai'`           | Request/response API schema                                                                                               |
-| `providerUrl`    | `string`                                                      | Depends on schema    | API endpoint base URL                                                                                                      |
-| `token`          | `string`                                                      | —                    | API token. Falls back to env vars (`ANTHROPIC_API_KEY`, `OPENAI_API_KEY`)                                                  |
-| `model`          | `string`                                                      | Depends on schema    | Model name (see [Schemas and endpoints](#schemas-and-endpoints) below)                                                    |
-| `maxActions`     | `number`                                                      | `1`                  | Maximum actions per LLM response                                                                                           |
-| `maxSteps`       | `number`                                                      | `1`                  | Agentic loop steps. `1` = single-pass (fast, no loop). `>1` = ReAct loop (iterative observe-think-act)                     |
-| `contextWindow`  | `number`                                                      | `3`                  | Number of recent step-pairs to keep in conversation memory (agentic mode only)                                             |
-| `timeout`        | `number`                                                      | `30000`              | Request timeout in ms                                                                                                      |
-| `maxRetries`     | `number`                                                      | `2`                  | Max retry attempts on retryable errors (5xx, 429, network). Exponential backoff                                            |
-| `maxOutputTokens`| `number`                                                      | `1024`               | Maximum output tokens per LLM response                                                                                     |
-| `maxSnapshotElements` | `number`                                                 | —                    | Limit interactive elements in page snapshot. Set ~40 for 4B local models. No limit by default                             |
-| `autoHeal`       | `HealConfig`                                                  | —                    | Self-healing configuration (see [Self-Healing](#self-healing) below)                                                       |
-| `send`           | `(prompt: PromptInput) => Promise<string>`                    | —                    | Override the built-in adapter entirely. When set, `schema`/`providerUrl`/`token`/`model` are ignored                       |
+| Option                | Type                                       | Default           | Description                                                                                            |
+|-----------------------|--------------------------------------------|-------------------|--------------------------------------------------------------------------------------------------------|
+| `schema`              | `'anthropic' \| 'openai'`                  | `'openai'`        | Request/response API schema                                                                            |
+| `providerUrl`         | `string`                                   | Depends on schema | API endpoint base URL                                                                                  |
+| `token`               | `string`                                   | —                 | API token. Falls back to env vars (`ANTHROPIC_API_KEY`, `OPENAI_API_KEY`)                              |
+| `model`               | `string`                                   | Depends on schema | Model name (see [Schemas and endpoints](#schemas-and-endpoints) below)                                 |
+| `maxActions`          | `number`                                   | `1`               | Maximum actions per LLM response                                                                       |
+| `maxSteps`            | `number`                                   | `1`               | Agentic loop steps. `1` = single-pass (fast, no loop). `>1` = ReAct loop (iterative observe-think-act) |
+| `contextWindow`       | `number`                                   | `3`               | Number of recent step-pairs to keep in conversation memory (agentic mode only)                         |
+| `timeout`             | `number`                                   | `30000`           | Request timeout in ms                                                                                  |
+| `maxRetries`          | `number`                                   | `2`               | Max retry attempts on retryable errors (5xx, 429, network). Exponential backoff                        |
+| `maxOutputTokens`     | `number`                                   | `1024`            | Maximum output tokens per LLM response                                                                 |
+| `maxSnapshotElements` | `number`                                   | —                 | Limit interactive elements in page snapshot. Set ~40 for 4B local models. No limit by default          |
+| `autoHeal`            | `HealConfig`                               | —                 | Self-healing configuration (see [Self-Healing](#self-healing) below)                                   |
+| `send`                | `(prompt: PromptInput) => Promise<string>` | —                 | Override the built-in adapter entirely. When set, `schema`/`providerUrl`/`token`/`model` are ignored   |
 
 ## Usage
 
@@ -193,12 +192,12 @@ services: [
 
 **Healing decision tree:**
 
-| Error Pattern                          | Action                                    |
-|----------------------------------------|-------------------------------------------|
-| `stale element reference`              | Re-find element by original selector      |
-| `element click intercepted`            | Scroll into view, retry                   |
-| `invalid element state`                | Re-throw immediately (not healable)       |
-| `element not found` / `no such element`| LLM-based healing, then retry             |
+| Error Pattern                           | Action                               |
+|-----------------------------------------|--------------------------------------|
+| `stale element reference`               | Re-find element by original selector |
+| `element click intercepted`             | Scroll into view, retry              |
+| `invalid element state`                 | Re-throw immediately (not healable)  |
+| `element not found` / `no such element` | LLM-based healing, then retry        |
 
 After a test suite completes, a healing summary is logged:
 
@@ -247,10 +246,10 @@ export const config: WebdriverIO.Config = {
 
 ### Schema defaults
 
-| Schema      | Default Model                | Default URL                     | Token Env Var         |
-|-------------|------------------------------|---------------------------------|-----------------------|
-| `openai`    | `qwen2.5-coder:7b`          | `http://localhost:11434` (Ollama) | `OPENAI_API_KEY` when needed |
-| `anthropic` | `claude-sonnet-4-20250514`  | `https://api.anthropic.com`     | `ANTHROPIC_API_KEY`   |
+| Schema      | Default Model              | Default URL                       | Token Env Var                |
+|-------------|----------------------------|-----------------------------------|------------------------------|
+| `openai`    | `qwen2.5-coder:7b`         | `http://localhost:11434` (Ollama) | `OPENAI_API_KEY` when needed |
+| `anthropic` | `claude-sonnet-4-20250514` | `https://api.anthropic.com`       | `ANTHROPIC_API_KEY`          |
 
 `schema` selects the wire format, not a provider. The OpenAI schema works with OpenAI-compatible servers such as LM Studio and OpenRouter. The default endpoint is local Ollama; configure another endpoint explicitly.
 
