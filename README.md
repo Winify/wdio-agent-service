@@ -70,9 +70,10 @@ For a working example with self-healing and LM Studio, see [`examples/wdio.conf.
 | `maxSnapshotElements` | `number` | — | Cap elements in snapshot. Set ~40 for 4B local models |
 | `autoHeal` | `HealConfig` | — | Self-healing config (see [Self-Healing](#self-healing)) |
 | `fixingSuggestions` | `FixingSuggestionsConfig` | — | Fixing suggestions config (see [Fixing Suggestions](#fixing-suggestions)) |
-| `send` | `(prompt: PromptInput) => Promise<string>` | — | Override built-in adapter. When set, `schema`/`providerUrl`/`model` are ignored |
+| `request` | `(prompt: PromptInput) => Promise<string>` | — | Override built-in adapter entirely. When set, `schema`/`providerUrl`/`model` are ignored |
+| `send` | `(prompt: PromptInput) => Promise<string>` | — | **Deprecated.** Use `request` instead. Mapped automatically with a warning |
 
-> **Deprecated:** `provider` is an alias for `schema`. It maps automatically with a warning. Use `schema` instead.
+> **Deprecated:** `provider` is an alias for `schema`. `send` is an alias for `request`. Both map automatically with a warning.
 
 ## Usage
 
@@ -216,7 +217,7 @@ Works with Appium for Android and iOS. See [`examples/wdio.appium.conf.ts`](exam
 
 ## Provider Setup
 
-`providerUrl` and `model` are **required** unless using a `send` override. `schema` selects the wire format — choose based on your endpoint.
+`providerUrl` and `model` are **required** unless using a `request` override. `schema` selects the wire format — choose based on your endpoint.
 
 ### Schema reference
 
@@ -252,21 +253,39 @@ services: [
 ],
 ```
 
-### Custom `send` function
+### Custom `request` function
 
-Bypass the built-in adapter entirely:
+Bypass the built-in adapter entirely by providing your own `request` function. This gives you full control over the LLM call — provider URL, authentication, model selection, and response extraction.
 
 ```ts
 services: [
   ['agent', {
-    send: async ({ system, user }) => {
-      const response = await myCustomLlm({ system, user });
-      return response.text;
+    request: async ({ system, user }) => {
+      const response = await fetch('https://api.openai.com/v1/chat/completions', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${process.env.OPENAI_API_KEY}`,
+        },
+        body: JSON.stringify({
+          model: 'gpt-4o-mini',
+          messages: [
+            { role: 'system', content: system },
+            { role: 'user', content: user },
+          ],
+        }),
+      });
+      const data = await response.json();
+      return data.choices[0].message.content;
     },
     maxActions: 2,
   }]
 ],
 ```
+
+Complete recipe configs: [`examples/recipes/request-override-openai.ts`](examples/recipes/request-override-openai.ts) (OpenAI-compatible) and [`examples/recipes/request-override-anthropic.ts`](examples/recipes/request-override-anthropic.ts) (Anthropic).
+
+> **Deprecated:** The `send` option is an alias for `request`. It maps automatically with a deprecation warning. Migrate to `request`.
 
 ### Ollama Setup
 

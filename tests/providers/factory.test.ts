@@ -10,32 +10,65 @@ describe('initializeProvider', () => {
     mockWarn.mockClear();
   });
 
-  it('uses send override when provided', async () => {
+  it('uses request override when provided', async () => {
     const mockSend = vi.fn().mockResolvedValue('mock response');
-    const config: AgentServiceConfig = { send: mockSend };
+    const config: AgentServiceConfig = { request: mockSend };
 
     const provider = initializeProvider(config);
-    const result = await provider.send({ system: 'sys', user: 'usr' });
+    const result = await provider.request({ system: 'sys', user: 'usr' });
 
     expect(result).toBe('mock response');
     expect(mockSend).toHaveBeenCalledWith({ system: 'sys', user: 'usr' });
   });
 
-  it('warns when both send override and schema are set', async () => {
+  it('warns when both request override and schema are set', async () => {
     const mockSend = vi.fn().mockResolvedValue('mock');
     const config: AgentServiceConfig = {
-      send: mockSend,
+      request: mockSend,
       schema: 'anthropic',
       providerUrl: 'http://x',
       model: 'm',
     };
 
     const provider = initializeProvider(config);
-    const result = await provider.send({ system: 's', user: 'u' });
+    const result = await provider.request({ system: 's', user: 'u' });
 
     expect(result).toBe('mock');
     expect(mockWarn).toHaveBeenCalledWith(
-      expect.stringContaining("'send' override and 'schema: anthropic'"),
+      expect.stringContaining("'request' override and 'schema: anthropic'"),
     );
+  });
+
+  describe('deprecated send config', () => {
+    it('maps send to request with deprecation warning', async () => {
+      const mockFn = vi.fn().mockResolvedValue('compat response');
+      const config: AgentServiceConfig = { send: mockFn };
+
+      const provider = initializeProvider(config);
+      const result = await provider.request({ system: 's', user: 'u' });
+
+      expect(result).toBe('compat response');
+      expect(mockFn).toHaveBeenCalledWith({ system: 's', user: 'u' });
+      expect(mockWarn).toHaveBeenCalledWith(
+        expect.stringContaining("'send' is deprecated"),
+      );
+    });
+
+    it('request takes priority when both request and send are set', async () => {
+      const requestFn = vi.fn().mockResolvedValue('from request');
+      const sendFn = vi.fn().mockResolvedValue('from send');
+      const config: AgentServiceConfig = { request: requestFn, send: sendFn };
+
+      const provider = initializeProvider(config);
+      const result = await provider.request({ system: 's', user: 'u' });
+
+      expect(result).toBe('from request');
+      expect(requestFn).toHaveBeenCalled();
+      expect(sendFn).not.toHaveBeenCalled();
+      // No deprecation warning when request is present
+      expect(mockWarn).not.toHaveBeenCalledWith(
+        expect.stringContaining("'send' is deprecated"),
+      );
+    });
   });
 });

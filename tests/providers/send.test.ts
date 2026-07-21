@@ -32,31 +32,62 @@ describe('resolveLlmConfig', () => {
         .toThrow('`model` is required');
     });
 
-    it('send override bypasses validation', async () => {
+    it('request override bypasses validation', async () => {
       const mockSend = vi.fn().mockResolvedValue('ok');
-      // No providerUrl or model — should not throw because send is set
-      const provider = resolveLlmConfig({ send: mockSend });
-      const result = await provider.send({ system: 's', user: 'u' });
+      // No providerUrl or model — should not throw because request is set
+      const provider = resolveLlmConfig({ request: mockSend });
+      const result = await provider.request({ system: 's', user: 'u' });
       expect(result).toBe('ok');
     });
   });
 
-  // ── send override ──────────────────────────────────────────
+  // ── request override ──────────────────────────────────────────
 
-  describe('send override', () => {
-    it('uses custom send function', async () => {
+  describe('request override', () => {
+    it('uses custom request function', async () => {
       const mockSend = vi.fn().mockResolvedValue('custom response');
-      const provider = resolveLlmConfig({ send: mockSend });
+      const provider = resolveLlmConfig({ request: mockSend });
 
-      const result = await provider.send({ system: 'sys', user: 'usr' });
+      const result = await provider.request({ system: 'sys', user: 'usr' });
       expect(result).toBe('custom response');
       expect(mockSend).toHaveBeenCalledWith({ system: 'sys', user: 'usr' });
     });
 
-    it('warns when both send and schema are set', () => {
-      resolveLlmConfig({ send: vi.fn(), schema: 'anthropic', providerUrl: 'http://x', model: 'm' });
+    it('warns when both request and schema are set', () => {
+      resolveLlmConfig({ request: vi.fn(), schema: 'anthropic', providerUrl: 'http://x', model: 'm' });
       expect(mockWarn).toHaveBeenCalledWith(
-        expect.stringContaining("'send' override and 'schema: anthropic'"),
+        expect.stringContaining("'request' override and 'schema: anthropic'"),
+      );
+    });
+  });
+
+  // ── deprecated send config ───────────────────────────────────
+
+  describe('deprecated send config', () => {
+    it('maps send to request with deprecation warning', async () => {
+      const mockFn = vi.fn().mockResolvedValue('compat response');
+      const provider = resolveLlmConfig({ send: mockFn } as unknown as AgentServiceConfig);
+      const result = await provider.request({ system: 's', user: 'u' });
+
+      expect(result).toBe('compat response');
+      expect(mockFn).toHaveBeenCalledWith({ system: 's', user: 'u' });
+      expect(mockWarn).toHaveBeenCalledWith(
+        expect.stringContaining("'send' is deprecated"),
+      );
+    });
+
+    it('request takes priority when both request and send are set', async () => {
+      const requestFn = vi.fn().mockResolvedValue('from request');
+      const sendFn = vi.fn().mockResolvedValue('from send');
+      const provider = resolveLlmConfig({ request: requestFn, send: sendFn } as unknown as AgentServiceConfig);
+      const result = await provider.request({ system: 's', user: 'u' });
+
+      expect(result).toBe('from request');
+      expect(requestFn).toHaveBeenCalled();
+      expect(sendFn).not.toHaveBeenCalled();
+      // No deprecation warning when request is present
+      expect(mockWarn).not.toHaveBeenCalledWith(
+        expect.stringContaining("'send' is deprecated"),
       );
     });
   });
@@ -74,7 +105,7 @@ describe('resolveLlmConfig', () => {
         providerUrl: 'https://api.anthropic.com',
         model: 'claude-haiku-4-5-20251001',
       });
-      const result = await provider.send({ system: 'be helpful', user: 'click the button' });
+      const result = await provider.request({ system: 'be helpful', user: 'click the button' });
 
       expect(result).toBe('hello from claude');
       const call = mockFetch.mock.calls[0];
@@ -94,7 +125,7 @@ describe('resolveLlmConfig', () => {
         providerUrl: 'https://custom.anthropic.example.com',
         model: 'claude-opus-4-8',
       });
-      await provider.send({ system: 's', user: 'u' });
+      await provider.request({ system: 's', user: 'u' });
 
       const call = mockFetch.mock.calls[0];
       expect(call[0]).toBe('https://custom.anthropic.example.com/v1/messages');
@@ -110,7 +141,7 @@ describe('resolveLlmConfig', () => {
         providerUrl: 'https://api.anthropic.com/v1',
         model: 'claude-haiku-4-5-20251001',
       });
-      await provider.send({ system: 's', user: 'u' });
+      await provider.request({ system: 's', user: 'u' });
 
       const call = mockFetch.mock.calls[0];
       expect(call[0]).toBe('https://api.anthropic.com/v1/messages');
@@ -130,7 +161,7 @@ describe('resolveLlmConfig', () => {
         providerUrl: 'https://api.openai.com',
         model: 'gpt-4o-mini',
       });
-      const result = await provider.send({ system: 'be helpful', user: 'click button' });
+      const result = await provider.request({ system: 'be helpful', user: 'click button' });
 
       expect(result).toBe('gpt response');
       const call = mockFetch.mock.calls[0];
@@ -155,7 +186,7 @@ describe('resolveLlmConfig', () => {
         providerUrl: 'http://localhost:1234/v1',
         model: 'qwen/qwen3.5-4b',
       });
-      await provider.send({ system: 's', user: 'u' });
+      await provider.request({ system: 's', user: 'u' });
 
       const call = mockFetch.mock.calls[0];
       expect(call[0]).toBe('http://localhost:1234/v1/chat/completions');
@@ -175,7 +206,7 @@ describe('resolveLlmConfig', () => {
         providerUrl: 'http://localhost:11434',
         model: 'qwen2.5-coder:7b',
       });
-      const result = await provider.send({ system: 'be helpful', user: 'run test' });
+      const result = await provider.request({ system: 'be helpful', user: 'run test' });
 
       expect(result).toBe('ollama response');
       const call = mockFetch.mock.calls[0];
@@ -197,7 +228,7 @@ describe('resolveLlmConfig', () => {
         providerUrl: 'http://custom-host:9999',
         model: 'qwen2.5-coder:7b',
       });
-      await provider.send({ system: 's', user: 'u' });
+      await provider.request({ system: 's', user: 'u' });
 
       const call = mockFetch.mock.calls[0];
       expect(call[0]).toBe('http://custom-host:9999/api/chat');
@@ -213,7 +244,7 @@ describe('resolveLlmConfig', () => {
         providerUrl: 'http://localhost:11434/api/chat',
         model: 'qwen2.5-coder:7b',
       });
-      await provider.send({ system: 's', user: 'u' });
+      await provider.request({ system: 's', user: 'u' });
 
       const call = mockFetch.mock.calls[0];
       expect(call[0]).toBe('http://localhost:11434/api/chat');
@@ -230,7 +261,7 @@ describe('resolveLlmConfig', () => {
         providerUrl: 'http://localhost:11434',
         model: 'qwen2.5-coder:7b',
       });
-      await provider.send({ system: 's', user: 'u' }, { responseSchema: schema });
+      await provider.request({ system: 's', user: 'u' }, { responseSchema: schema });
 
       const body = JSON.parse(mockFetch.mock.calls[0][1].body);
       expect(body.format).toEqual(schema);
@@ -248,7 +279,7 @@ describe('resolveLlmConfig', () => {
         providerUrl: 'https://api.anthropic.com',
         model: 'claude-haiku-4-5-20251001',
       } as unknown as AgentServiceConfig);
-      await provider.send({ system: 's', user: 'u' });
+      await provider.request({ system: 's', user: 'u' });
 
       const call = mockFetch.mock.calls[0];
       expect(call[0]).toBe('https://api.anthropic.com/v1/messages');
@@ -265,7 +296,7 @@ describe('resolveLlmConfig', () => {
         providerUrl: 'https://api.openai.com',
         model: 'gpt-4o-mini',
       } as unknown as AgentServiceConfig);
-      await provider.send({ system: 's', user: 'u' });
+      await provider.request({ system: 's', user: 'u' });
 
       const call = mockFetch.mock.calls[0];
       expect(call[0]).toBe('https://api.openai.com/v1/chat/completions');
@@ -281,7 +312,7 @@ describe('resolveLlmConfig', () => {
         providerUrl: 'http://localhost:11434',
         model: 'qwen2.5-coder:7b',
       } as unknown as AgentServiceConfig);
-      await provider.send({ system: 's', user: 'u' });
+      await provider.request({ system: 's', user: 'u' });
 
       const call = mockFetch.mock.calls[0];
       expect(call[0]).toBe('http://localhost:11434/api/chat');
@@ -296,7 +327,7 @@ describe('resolveLlmConfig', () => {
         providerUrl: 'https://api.anthropic.com',
         model: 'claude-haiku-4-5-20251001',
       } as unknown as AgentServiceConfig);
-      await provider.send({ system: 's', user: 'u' });
+      await provider.request({ system: 's', user: 'u' });
 
       const call = mockFetch.mock.calls[0];
       expect(call[0]).toBe('https://api.anthropic.com/v1/messages');
@@ -314,7 +345,7 @@ describe('resolveLlmConfig', () => {
         .mockResolvedValueOnce(createResponse(200, { choices: [{ message: { content: 'success after retry' } }] }));
 
       const provider = resolveLlmConfig(CFG);
-      const result = await provider.send({ system: 's', user: 'u' });
+      const result = await provider.request({ system: 's', user: 'u' });
 
       expect(result).toBe('success after retry');
       expect(mockFetch).toHaveBeenCalledTimes(2);
@@ -327,7 +358,7 @@ describe('resolveLlmConfig', () => {
         .mockResolvedValueOnce(createResponse(200, { choices: [{ message: { content: 'ok' } }] }));
 
       const provider = resolveLlmConfig(CFG);
-      const result = await provider.send({ system: 's', user: 'u' });
+      const result = await provider.request({ system: 's', user: 'u' });
 
       expect(result).toBe('ok');
       expect(mockFetch).toHaveBeenCalledTimes(3);
@@ -337,7 +368,7 @@ describe('resolveLlmConfig', () => {
       mockFetch.mockResolvedValue(createResponse(500, {}));
 
       const provider = resolveLlmConfig({ ...CFG, maxRetries: 1 });
-      await expect(provider.send({ system: 's', user: 'u' })).rejects.toThrow('LLM request failed');
+      await expect(provider.request({ system: 's', user: 'u' })).rejects.toThrow('LLM request failed');
       expect(mockFetch).toHaveBeenCalledTimes(2);
     });
 
@@ -345,7 +376,7 @@ describe('resolveLlmConfig', () => {
       mockFetch.mockResolvedValueOnce(createResponse(401, {}));
 
       const provider = resolveLlmConfig(CFG);
-      await expect(provider.send({ system: 's', user: 'u' })).rejects.toThrow('LLM request failed');
+      await expect(provider.request({ system: 's', user: 'u' })).rejects.toThrow('LLM request failed');
       expect(mockFetch).toHaveBeenCalledTimes(1);
     });
 
@@ -355,7 +386,7 @@ describe('resolveLlmConfig', () => {
         .mockResolvedValueOnce(createResponse(200, { choices: [{ message: { content: 'recovered' } }] }));
 
       const provider = resolveLlmConfig(CFG);
-      const result = await provider.send({ system: 's', user: 'u' });
+      const result = await provider.request({ system: 's', user: 'u' });
 
       expect(result).toBe('recovered');
       expect(mockFetch).toHaveBeenCalledTimes(2);
@@ -375,7 +406,7 @@ describe('resolveLlmConfig', () => {
         providerUrl: 'https://api.openai.com',
         model: 'gpt-4o-mini',
       });
-      await provider.send({ system: 's', user: 'u' }, { temperature: 0.7 });
+      await provider.request({ system: 's', user: 'u' }, { temperature: 0.7 });
 
       const body = JSON.parse(mockFetch.mock.calls[0][1].body);
       expect(body.temperature).toBe(0.7);
@@ -392,7 +423,7 @@ describe('resolveLlmConfig', () => {
         providerUrl: 'https://api.openai.com',
         model: 'gpt-4o-mini',
       });
-      await provider.send({ system: 's', user: 'u' }, { responseSchema: schema });
+      await provider.request({ system: 's', user: 'u' }, { responseSchema: schema });
 
       const body = JSON.parse(mockFetch.mock.calls[0][1].body);
       expect(body.response_format).toEqual({

@@ -27,7 +27,7 @@ const {
   mockLogError,
 } = vi.hoisted(() => ({
   mockProviderSend: vi.fn(),
-  mockInitializeProvider: vi.fn((_config?: unknown) => ({ send: mockProviderSend })),
+  mockInitializeProvider: vi.fn((_config?: unknown) => ({ request: mockProviderSend })),
   mockGetSnapshot: vi.fn(),
   mockBuildPrompt: vi.fn(),
   mockParseLlmResponse: vi.fn(),
@@ -142,7 +142,7 @@ function resetAllMocks(): void {
 }
 
 function setDefaults(): void {
-  mockInitializeProvider.mockReturnValue({ send: mockProviderSend });
+  mockInitializeProvider.mockReturnValue({ request: mockProviderSend });
   mockGetSnapshot.mockResolvedValue(SNAPSHOT_RESULT);
   mockProviderSend.mockResolvedValue('[{"action":"CLICK","target":"e1"}]');
   mockParseLlmResponse.mockReturnValue([{ type: 'CLICK', target: 'button*=Login' }]);

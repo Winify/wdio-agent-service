@@ -20,7 +20,7 @@ export async function healSelector(
   browser: WebdriverIO.Browser,
   brokenSelector: string,
   actionType: string,
-  send: (prompt: PromptInput) => Promise<string>,
+  request: (prompt: PromptInput) => Promise<string>,
   maxAttempts: number = 1,
   snapshotType?: 'a11y' | 'elements',
 ): Promise<string | null> {
@@ -37,7 +37,7 @@ export async function healSelector(
       }
 
       // Ask the LLM to find the intended element
-      const rawResponse = await send(buildHealingPrompt(text, brokenSelector, actionType));
+      const rawResponse = await request(buildHealingPrompt(text, brokenSelector, actionType));
       log.warn(`[Auto-Heal] LLM raw response: ${rawResponse.substring(0, 300)}`);
       const parsed = parseHealingResponse(rawResponse);
 
@@ -76,7 +76,7 @@ export async function suggestFix(
   browser: WebdriverIO.Browser,
   brokenSelector: string,
   actionType: string,
-  send: (prompt: PromptInput) => Promise<string>,
+  request: (prompt: PromptInput) => Promise<string>,
   snapshotType?: 'a11y' | 'elements',
 ): Promise<{ selector: string; reasoning?: string } | null> {
   try {
@@ -86,7 +86,7 @@ export async function suggestFix(
       return null;
     }
 
-    const rawResponse = await send(buildFixingSuggestionPrompt(text, brokenSelector, actionType));
+    const rawResponse = await request(buildFixingSuggestionPrompt(text, brokenSelector, actionType));
     log.debug(`[FixingSuggestions] LLM response: ${rawResponse.substring(0, 300)}`);
     const parsed = parseHealingResponse(rawResponse);
 

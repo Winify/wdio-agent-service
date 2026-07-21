@@ -20,22 +20,28 @@ interface ResolvedConfig {
 }
 
 /**
- * Resolve LLM configuration and return a provider with send().
+ * Resolve LLM configuration and return a provider with `request()`.
  * Supports anthropic, openai, and ollama API schemas.
  *
- * `providerUrl` and `model` are required unless a `send` override is provided.
+ * `providerUrl` and `model` are required unless a `request` override is provided.
  * `schema` selects the wire format. Use 'ollama' for Ollama's native API,
  * 'openai' for OpenAI-compatible endpoints (LM Studio, OpenRouter, etc.),
  * 'anthropic' for Anthropic-compatible endpoints.
  */
 export function resolveLlmConfig(config: AgentServiceConfig): LLMProvider {
-  // Complete override — user's send function takes priority
-  if (config.send) {
+  // Check for deprecated 'send' field and map to 'request'
+  const requestFn = config.request ?? config.send;
+  if (config.send && !config.request) {
+    log.warn('[Agent] \'send\' is deprecated. Use \'request\' instead.');
+  }
+
+  // Complete override — user's request function takes priority
+  if (requestFn) {
     if (config.schema) {
-      log.warn(`[Agent] Both 'send' override and 'schema: ${config.schema}' are set. The 'send' override takes priority.`);
+      log.warn(`[Agent] Both 'request' override and 'schema: ${config.schema}' are set. The 'request' override takes priority.`);
     }
     return {
-      send: (prompt, _opts?) => config.send!(prompt),
+      request: (prompt, _opts?) => requestFn(prompt),
     };
   }
 
@@ -50,10 +56,10 @@ export function resolveLlmConfig(config: AgentServiceConfig): LLMProvider {
   }
 
   if (!config.providerUrl) {
-    throw new Error('[Agent] `providerUrl` is required when not using a `send` override.');
+    throw new Error('[Agent] `providerUrl` is required when not using a `request` override.');
   }
   if (!config.model) {
-    throw new Error('[Agent] `model` is required when not using a `send` override.');
+    throw new Error('[Agent] `model` is required when not using a `request` override.');
   }
 
   const resolved: ResolvedConfig = {
@@ -68,13 +74,13 @@ export function resolveLlmConfig(config: AgentServiceConfig): LLMProvider {
   log.debug(`[Agent] Schema: ${resolved.schema}, model: ${resolved.model}, endpoint: ${resolved.endpoint}`);
 
   return {
-    send: (prompt, opts?) => sendRequest(resolved, prompt, opts),
+    request: (prompt, opts?) => performRequest(resolved, prompt, opts),
   };
 }
 
-// ── send() — wraps PromptInput into ChatMessage[] and calls chat ──
+// ── performRequest() — wraps PromptInput into ChatMessage[] and calls chat ──
 
-async function sendRequest(
+async function performRequest(
   cfg: ResolvedConfig,
   prompt: PromptInput,
   opts?: LLMProviderOptions,

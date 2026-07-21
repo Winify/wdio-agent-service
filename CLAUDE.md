@@ -75,7 +75,7 @@ services: [['agent', {
 
 ## Provider
 
-Three schemas: `anthropic` (Messages API), `openai` (Chat Completions), `ollama` (native API). `providerUrl` and `model` are required unless using `send` override. Config `send` override bypasses built-in logic.
+Three schemas: `anthropic` (Messages API), `openai` (Chat Completions), `ollama` (native API). `providerUrl` and `model` are required unless using `send` override. Config `request` override bypasses built-in logic.
 
 ## Mobile
 

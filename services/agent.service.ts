@@ -46,6 +46,7 @@ export default class AgentService implements Services.ServiceInstance {
       inViewportOnly: serviceOptions.inViewportOnly ?? true,
       snapshotType: serviceOptions.snapshotType ?? 'elements',
       maxSnapshotElements: serviceOptions.maxSnapshotElements,
+      request: serviceOptions.request,
       send: serviceOptions.send,
       autoHeal: serviceOptions.autoHeal,
       fixingSuggestions: serviceOptions.fixingSuggestions,
@@ -69,15 +70,15 @@ export default class AgentService implements Services.ServiceInstance {
     if (healConfig?.enabled && fixConfig?.enabled) {
       installCombinedInterceptors(
         browser, healConfig, fixConfig,
-        this.provider.send.bind(this.provider),
+        this.provider.request.bind(this.provider),
         this.resolvedConfig.snapshotType,
       );
     } else {
       if (healConfig?.enabled) {
-        installInterceptors(browser, healConfig, this.provider.send.bind(this.provider), this.resolvedConfig.snapshotType);
+        installInterceptors(browser, healConfig, this.provider.request.bind(this.provider), this.resolvedConfig.snapshotType);
       }
       if (fixConfig?.enabled) {
-        installFixingSuggestionsInterceptor(browser, fixConfig, this.provider.send.bind(this.provider), this.resolvedConfig.snapshotType);
+        installFixingSuggestionsInterceptor(browser, fixConfig, this.provider.request.bind(this.provider), this.resolvedConfig.snapshotType);
       }
     }
 
@@ -128,7 +129,7 @@ export default class AgentService implements Services.ServiceInstance {
     log.debug('[Agent] Snapshot taken, building LLM prompt');
 
     const llmPrompt = buildPrompt(snapshot.text, prompt, maxActions, platform);
-    const response = await this.provider.send(llmPrompt);
+    const response = await this.provider.request(llmPrompt);
     const rawActions = parseLlmResponse(response, maxActions);
 
     // Resolve eN virtual IDs → real selectors

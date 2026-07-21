@@ -54,10 +54,10 @@ export interface AgentServiceConfig {
   /** @deprecated Use `schema` instead. Mapped automatically with a warning. */
   provider?: string;
 
-  /** LLM API endpoint base URL. Required unless `send` override is set. */
+  /** LLM API endpoint base URL. Required unless `request` override is set. */
   providerUrl?: string;
 
-  /** LLM model name. Required unless `send` override is set. */
+  /** LLM model name. Required unless `request` override is set. */
   model?: string;
 
   /** Maximum actions per LLM response. Default: 1 */
@@ -88,7 +88,24 @@ export interface AgentServiceConfig {
   /** Fixing suggestions configuration. Default: disabled */
   fixingSuggestions?: FixingSuggestionsConfig;
 
-  /** Override the built-in LLM adapter entirely. When set, schema/providerUrl/token/model are ignored. */
+  /**
+   * Override the built-in LLM adapter entirely. When set, schema/providerUrl/model are ignored.
+   * Receives the assembled PromptInput (system + user) and must return the raw LLM response text.
+   *
+   * @example
+   * request: async ({ system, user }) => {
+   *   const res = await fetch('https://api.openai.com/v1/chat/completions', {
+   *     method: 'POST',
+   *     headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${process.env.OPENAI_API_KEY}` },
+   *     body: JSON.stringify({ model: 'gpt-4o-mini', messages: [{ role: 'system', content: system }, { role: 'user', content: user }] }),
+   *   });
+   *   const data = await res.json();
+   *   return data.choices[0].message.content;
+   * }
+   */
+  request?: (prompt: PromptInput) => Promise<string>;
+
+  /** @deprecated Use `request` instead. Mapped automatically with a warning. */
   send?: (prompt: PromptInput) => Promise<string>;
 }
 
@@ -99,7 +116,7 @@ export interface LLMProviderOptions {
 }
 
 export interface LLMProvider {
-  send(prompt: PromptInput, options?: LLMProviderOptions): Promise<string>;
+  request(prompt: PromptInput, options?: LLMProviderOptions): Promise<string>;
 }
 
 // ── Agent action types ────────────────────────────────────────

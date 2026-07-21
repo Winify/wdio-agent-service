@@ -57,7 +57,7 @@ function createSelectorTracker(browser: WebdriverIO.Browser): {
 export function installInterceptors(
   browser: WebdriverIO.Browser,
   config: HealConfig,
-  send: (prompt: PromptInput) => Promise<string>,
+  request: (prompt: PromptInput) => Promise<string>,
   snapshotType?: 'a11y' | 'elements',
 ): void {
   if (!config.enabled) return;
@@ -77,7 +77,7 @@ export function installInterceptors(
   for (const command of config.commands) {
     browser.overwriteCommand(command, async function (origCommand, ...args: unknown[]) {
       const selector = getSelector(this);
-      return withHeal(browser, command, selector, origCommand, args, send, maxAttempts, settleDelay, waitForHealing, snapshotType);
+      return withHeal(browser, command, selector, origCommand, args, request, maxAttempts, settleDelay, waitForHealing, snapshotType);
     }, true);
   }
 }
@@ -107,7 +107,7 @@ async function withHeal(
   selector: string | undefined,
   origCommand: Function,
   args: unknown[],
-  send: (prompt: PromptInput) => Promise<string>,
+  request: (prompt: PromptInput) => Promise<string>,
   maxAttempts: number,
   settleDelay: number,
   waitForHealing: number,
@@ -155,7 +155,7 @@ async function withHeal(
 
     log.warn(`[Auto-Heal] Command "${commandName}" failed for selector "${selector}". Attempting LLM heal...`);
 
-    const healedSelector = await healSelector(browser, selector, commandName, send, maxAttempts, snapshotType);
+    const healedSelector = await healSelector(browser, selector, commandName, request, maxAttempts, snapshotType);
 
     if (!healedSelector) {
       healingReport.addEvent({
@@ -204,7 +204,7 @@ async function captureSuggestion(
   selector: string | undefined,
   origCommand: Function,
   args: unknown[],
-  send: (prompt: PromptInput) => Promise<string>,
+  request: (prompt: PromptInput) => Promise<string>,
   snapshotType?: 'a11y' | 'elements',
 ): Promise<unknown> {
   try {
@@ -212,7 +212,7 @@ async function captureSuggestion(
   } catch (error) {
     if (selector && isElementNotFoundError(error)) {
       log.info(`[FixingSuggestions] Capturing suggestion for "${selector}" (${command})`);
-      const suggestion = await suggestFix(browser, selector, command, send, snapshotType);
+      const suggestion = await suggestFix(browser, selector, command, request, snapshotType);
       if (suggestion) {
         fixingSuggestionsStore.addSuggestion({
           command,
@@ -257,7 +257,7 @@ function isElementNotFoundError(error: unknown): boolean {
 export function installFixingSuggestionsInterceptor(
   browser: WebdriverIO.Browser,
   config: FixingSuggestionsConfig,
-  send: (prompt: PromptInput) => Promise<string>,
+  request: (prompt: PromptInput) => Promise<string>,
   snapshotType?: 'a11y' | 'elements',
 ): void {
   if (!config.enabled) return;
@@ -270,7 +270,7 @@ export function installFixingSuggestionsInterceptor(
   for (const command of config.commands) {
     browser.overwriteCommand(command, async function (origCommand, ...args: unknown[]) {
       const selector = getSelector(this);
-      return captureSuggestion(browser, command, selector, origCommand, args, send, snapshotType);
+      return captureSuggestion(browser, command, selector, origCommand, args, request, snapshotType);
     }, true);
   }
 }
@@ -288,7 +288,7 @@ export function installCombinedInterceptors(
   browser: WebdriverIO.Browser,
   healConfig: HealConfig,
   fixConfig: FixingSuggestionsConfig,
-  send: (prompt: PromptInput) => Promise<string>,
+  request: (prompt: PromptInput) => Promise<string>,
   snapshotType?: 'a11y' | 'elements',
 ): void {
   const healCommands = healConfig.commands ?? [];
@@ -306,7 +306,7 @@ export function installCombinedInterceptors(
   for (const command of healCommands) {
     browser.overwriteCommand(command, async function (origCommand, ...args: unknown[]) {
       const selector = getSelector(this);
-      return withHeal(browser, command, selector, origCommand, args, send,
+      return withHeal(browser, command, selector, origCommand, args, request,
         maxAttempts, settleDelay, waitForHealing, snapshotType);
     }, true);
   }
@@ -316,7 +316,7 @@ export function installCombinedInterceptors(
     if (healCommands.includes(command)) continue;
     browser.overwriteCommand(command, async function (origCommand, ...args: unknown[]) {
       const selector = getSelector(this);
-      return captureSuggestion(browser, command, selector, origCommand, args, send, snapshotType);
+      return captureSuggestion(browser, command, selector, origCommand, args, request, snapshotType);
     }, true);
   }
 }
