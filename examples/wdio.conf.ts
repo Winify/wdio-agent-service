@@ -14,11 +14,11 @@ export const config: WebdriverIO.Config = {
     browserName: 'chrome',
   }],
 
-  logLevel: 'error',
+  logLevel: 'warn',
 
   bail: 0,
 
-  waitforTimeout: 10000,
+  waitforTimeout: 5000,
 
   connectionRetryTimeout: 120000,
   connectionRetryCount: 3,

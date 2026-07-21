@@ -58,11 +58,13 @@ export function installInterceptors(
 
   const settleDelay = config.settleDelay ?? 200;
 
+  const waitForHealing = config.waitForHealing ?? 1500;
+
   // Install interceptor for each configured command
   for (const command of config.commands) {
     browser.overwriteCommand(command, async function (origCommand, ...args: unknown[]) {
       const selector = getSelector(this);
-      return withHeal(browser, command, selector, origCommand, args, send, maxAttempts, settleDelay);
+      return withHeal(browser, command, selector, origCommand, args, send, maxAttempts, settleDelay, waitForHealing);
     }, true);
   }
 }
@@ -95,7 +97,13 @@ async function withHeal(
   send: (prompt: PromptInput) => Promise<string>,
   maxAttempts: number,
   settleDelay: number,
+  waitForHealing: number,
 ): Promise<unknown> {
+  // Cap waitForTimeout so healing kicks in quickly instead of
+  // waiting the full WDIO default on a known-broken selector.
+  const originalTimeout = browser.options.waitforTimeout ?? 5000;
+  browser.options.waitforTimeout = Math.min(originalTimeout, waitForHealing);
+
   try {
     return await origCommand(...args);
   } catch (error) {
@@ -171,6 +179,8 @@ async function withHeal(
       log.warn(`[Auto-Heal] Healed selector "${healedSelector}" also failed.`);
       throw error; // throw the original error
     }
+  } finally {
+    browser.options.waitforTimeout = originalTimeout;
   }
 }
 
@@ -215,7 +225,9 @@ function isElementNotFoundError(error: unknown): boolean {
     errorCode === 'no such element' ||                              // W3C protocol
     (msg.includes("Can't call") && msg.includes("because element wasn't found")) ||
     msg.includes('waitForExist') ||
-    (msg.includes('element ("') && msg.includes('") not found'))
+    (msg.includes('element ("') && msg.includes('") not found')) ||
+    msg.includes('scroll to the element') ||                        // Appium tap auto-scroll failure
+    msg.includes('Could not scroll')                                // generic scroll failure
   );
 }
 

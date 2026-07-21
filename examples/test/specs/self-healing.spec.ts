@@ -56,7 +56,6 @@ describe('Self-healing with healing report', () => {
     expect(typeof event!.timestamp).toBe('number');
 
     // Assert: healed action succeeded — value was set on the real element
-    const username = await browser.$('#username');
-    await expect(username).toHaveValue('webdriver');
+    await expect($('#username')).toHaveValue('webdriver');
   });
 });

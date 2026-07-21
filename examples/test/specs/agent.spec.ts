@@ -4,6 +4,8 @@
  * Single-pass: one LLM call → N actions. Fast, predictable.
  */
 
+import { browser } from '@wdio/globals';
+
 describe('Using natural language', () => {
 
   const BASE = 'https://the-internet.herokuapp.com';
@@ -13,6 +15,7 @@ describe('Using natural language', () => {
 
     expect(result.actions.length).toBeGreaterThanOrEqual(1);
     expect(result.actions[0].type).toBe('NAVIGATE');
+    await expect(browser).toHaveUrl(BASE);
   });
 
   it('clicks an element via CLICK action', async () => {

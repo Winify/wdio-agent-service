@@ -10,7 +10,7 @@ describe('Using natural language on mobile testing', () => {
 
     await browser.agent('click 3 random numbers');
 
-    await $('~start').click();
+    await $('~start').tap();
 
     await browser.agent('close timer');
 
@@ -19,7 +19,7 @@ describe('Using natural language on mobile testing', () => {
     expect(report.fixableCount).toBe(1);
     expect(report.events).toMatchObject([
       {
-        command: 'click',
+        command: 'tap',
         originalSelector: '~start',
         healedSelector: '~Start',
         fixable: true,

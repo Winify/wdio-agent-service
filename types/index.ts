@@ -35,6 +35,8 @@ export interface HealConfig {
   maxAttempts: number;
   /** Delay in ms after scroll-into-view to let animations settle. Default: 200 */
   settleDelay?: number;
+  /** Max wait in ms for element existence before triggering healing. Default: 1500 */
+  waitForHealing?: number;
 }
 
 export interface FixingSuggestionsConfig {

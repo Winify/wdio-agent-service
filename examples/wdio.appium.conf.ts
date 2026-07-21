@@ -23,7 +23,7 @@ export const config: WebdriverIO.Config = {
     'appium:appActivity': 'com.android.deskclock.DeskClock',
   }],
 
-  logLevel: 'debug',
+  logLevel: 'warn',
   bail: 0,
   waitforTimeout: 5000,
   connectionRetryTimeout: 120000,
@@ -38,7 +38,7 @@ export const config: WebdriverIO.Config = {
         model: process.env.AGENT_MODEL || 'qwen/qwen3.5-4b',
         maxActions: 3,
         timeout: 10_000,
-        autoHeal: { enabled: true, commands: ['tap', 'click'], maxAttempts: 2 },
+        autoHeal: { enabled: true, commands: ['tap'], maxAttempts: 2 },
       },
     ],
   ],
