@@ -1,5 +1,11 @@
 # Changelog
 
+## [1.1.0](https://github.com/Winify/wdio-agent-service/compare/v1.0.0...v1.1.0) (2026-07-21)
+
+### Features
+
+* **providers:** Introduce `request` for overriding provider communications ([4afac10](https://github.com/Winify/wdio-agent-service/commit/4afac108146eb32ab7b5f6be3c14a9366c103a24))
+
 ## [1.0.0](https://github.com/Winify/wdio-agent-service/compare/v0.2.0...v1.0.0) (2026-07-21)
 
 ### ⚠ BREAKING CHANGES
