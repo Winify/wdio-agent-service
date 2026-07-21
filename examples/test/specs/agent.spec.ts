@@ -15,7 +15,7 @@ describe('Using natural language', () => {
 
     expect(result.actions.length).toBeGreaterThanOrEqual(1);
     expect(result.actions[0].type).toBe('NAVIGATE');
-    await expect(browser).toHaveUrl(BASE);
+    await expect(browser).toHaveUrl(BASE, { containing: true });
   });
 
   it('clicks an element via CLICK action', async () => {

@@ -52,7 +52,7 @@ services: [
 ],
 ```
 
-For a working example with self-healing and LM Studio, see [`examples/wdio.conf.ts`](examples/wdio.conf.ts). Mobile example: [`examples/wdio.appium.conf.ts`](examples/wdio.appium.conf.ts).
+For a working example with self-healing and LM Studio, see [`examples/wdio.conf.ts`](examples/wdio.conf.ts) (built-in adapter) and [`examples/wdio.request.conf.ts`](examples/wdio.request.conf.ts) (custom `request` override, same tests). Mobile example: [`examples/wdio.appium.conf.ts`](examples/wdio.appium.conf.ts).
 
 ## Config Options
 

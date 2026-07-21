@@ -15,7 +15,8 @@ pnpm test:examples-mobile  # build + WDIO mobile specs on emulator
 Run from `examples/` directly:
 ```bash
 cd examples && pnpm install
-pnpm test             # wdio wdio.conf.ts
+pnpm test             # wdio wdio.conf.ts (built-in adapter)
+pnpm test:request     # wdio wdio.request.conf.ts (request override)
 pnpm test:mobile      # wdio wdio.appium.conf.ts
 ```
 
