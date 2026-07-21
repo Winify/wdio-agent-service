@@ -21,13 +21,14 @@ export async function healSelector(
   actionType: string,
   send: (prompt: PromptInput) => Promise<string>,
   maxAttempts: number = 1,
+  snapshotType?: 'a11y' | 'elements',
 ): Promise<string | null> {
   for (let attempt = 0; attempt < maxAttempts; attempt++) {
     try {
       log.info(`[Auto-Heal] Attempt ${attempt + 1}/${maxAttempts} for "${brokenSelector}" (${actionType})`);
 
       // Snapshot the current page state with eN virtual IDs
-      const { text, elements } = await getSnapshot(browser);
+      const { text, elements } = await getSnapshot(browser, { snapshotType });
 
       if (!text || Object.keys(elements).length === 0) {
         log.warn('[Auto-Heal] Snapshot is empty, cannot heal');
@@ -39,8 +40,8 @@ export async function healSelector(
         'You are a test healing assistant.',
         'Given a broken selector and a list of page elements, find the element most likely intended.',
         '',
-        'Each element:  eN: name → selector',
-        'Match the broken selector to the closest element name or selector.',
+        'Each interactive element has an eN ID (e1, e2, ...) with its name, role, and selector.',
+        'Match the broken selector to the closest element by name, role, or selector text.',
         'Return ONLY: {"target_id":"eN"}',
       ].join('\n');
 
@@ -98,9 +99,10 @@ export async function suggestFix(
   brokenSelector: string,
   actionType: string,
   send: (prompt: PromptInput) => Promise<string>,
+  snapshotType?: 'a11y' | 'elements',
 ): Promise<{ selector: string; reasoning?: string } | null> {
   try {
-    const { text, elements } = await getSnapshot(browser);
+    const { text, elements } = await getSnapshot(browser, { snapshotType });
     if (!text || Object.keys(elements).length === 0) {
       log.warn('[FixingSuggestions] Snapshot is empty, cannot suggest fix');
       return null;
@@ -110,8 +112,8 @@ export async function suggestFix(
       'You are a test selector assistant.',
       'Given a broken selector and a list of page elements, find the element most likely intended.',
       '',
-      'Each element:  eN: name → selector',
-      'Match the broken selector to the closest element name or selector.',
+      'Each interactive element has an eN ID (e1, e2, ...) with its name, role, and selector.',
+      'Match the broken selector to the closest element by name, role, or selector text.',
       'Return ONLY: {"target_id":"eN","reasoning":"<why this matches>"}',
     ].join('\n');
 

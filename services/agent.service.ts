@@ -44,6 +44,8 @@ export default class AgentService implements Services.ServiceInstance {
       timeout: serviceOptions.timeout ?? 30000,
       maxRetries: serviceOptions.maxRetries ?? 2,
       maxOutputTokens: serviceOptions.maxOutputTokens ?? 1024,
+      inViewportOnly: serviceOptions.inViewportOnly ?? true,
+      snapshotType: serviceOptions.snapshotType ?? 'elements',
       maxSnapshotElements: serviceOptions.maxSnapshotElements,
       send: serviceOptions.send,
       autoHeal: serviceOptions.autoHeal,
@@ -61,7 +63,7 @@ export default class AgentService implements Services.ServiceInstance {
     // Install self-healing interceptors if configured
     healingReport.clear();
     if (this.resolvedConfig.autoHeal?.enabled) {
-      installInterceptors(browser, this.resolvedConfig.autoHeal, this.provider.send.bind(this.provider));
+      installInterceptors(browser, this.resolvedConfig.autoHeal, this.provider.send.bind(this.provider), this.resolvedConfig.snapshotType);
     }
 
     // Install fixing suggestions interceptors if configured
@@ -71,6 +73,7 @@ export default class AgentService implements Services.ServiceInstance {
         browser,
         this.resolvedConfig.fixingSuggestions,
         this.provider.send.bind(this.provider),
+        this.resolvedConfig.snapshotType,
       );
     }
 
@@ -84,7 +87,12 @@ export default class AgentService implements Services.ServiceInstance {
     // Register snapshot helper for debugging
     browser.addCommand(
       'snapshot',
-      async (options?: { maxElements?: number }) => getSnapshot(browser, { maxElements: options?.maxElements }),
+      async (options?: { inViewportOnly?: boolean; snapshotType?: 'a11y' | 'elements'; maxElements?: number }) =>
+        getSnapshot(browser, {
+          inViewportOnly: options?.inViewportOnly ?? true,
+          snapshotType: options?.snapshotType,
+          maxElements: options?.maxElements,
+        }),
     );
 
     // Register healing report accessor
@@ -108,7 +116,11 @@ export default class AgentService implements Services.ServiceInstance {
 
     log.info(`[Agent] Prompt: "${prompt}" (platform: ${platform})`);
 
-    const snapshot = await getSnapshot(_browser, { maxElements: this.resolvedConfig.maxSnapshotElements });
+    const snapshot = await getSnapshot(_browser, {
+      inViewportOnly: this.resolvedConfig.inViewportOnly,
+      snapshotType: this.resolvedConfig.snapshotType,
+      maxElements: this.resolvedConfig.maxSnapshotElements,
+    });
     log.debug('[Agent] Snapshot taken, building LLM prompt');
 
     const llmPrompt = buildPrompt(snapshot.text, prompt, maxActions, platform);

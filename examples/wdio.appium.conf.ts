@@ -36,6 +36,7 @@ export const config: WebdriverIO.Config = {
         schema: process.env.AGENT_SCHEMA || 'openai',
         providerUrl: process.env.PROVIDER_URL || 'http://localhost:1234',
         model: process.env.AGENT_MODEL || 'qwen/qwen3.5-4b',
+        snapshotType: 'elements',
         maxActions: 3,
         timeout: 10_000,
         autoHeal: { enabled: true, commands: ['tap'], maxAttempts: 2 },

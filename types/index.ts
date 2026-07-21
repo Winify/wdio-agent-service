@@ -74,7 +74,14 @@ export interface AgentServiceConfig {
   /** Maximum output tokens per LLM response. Default: 1024 */
   maxOutputTokens?: number;
 
-  /** Maximum elements in the page snapshot sent to the LLM. No limit by default (undefined). Set ~40 for 4B local models. */
+  /** Only include viewport-visible elements in snapshots. Default: true */
+  inViewportOnly?: boolean;
+
+  /** Snapshot format sent to LLM. 'elements' = flat list (lean, better for small models).
+   *  'a11y' = accessibility tree (rich, token-heavy). Default: 'elements' */
+  snapshotType?: 'a11y' | 'elements';
+
+  /** Max elements in snapshot when snapshotType is 'elements'. Default: no limit */
   maxSnapshotElements?: number;
 
   /** Self-healing configuration. Default: disabled */
@@ -198,9 +205,15 @@ declare global {
       /**
        * Take a snapshot of the current page/app elements.
        * Returns a text tree with eN virtual IDs and an elements map.
-       * @param options.maxElements - optional cap on interactive elements
+       * @param options.inViewportOnly - only include viewport-visible elements (default true)
+       * @param options.snapshotType - 'a11y' (rich tree) or 'elements' (flat list). Default: 'a11y'
+       * @param options.maxElements - cap element count in 'elements' mode
        */
-      snapshot: (options?: { maxElements?: number }) => Promise<SnapshotResult>;
+      snapshot: (options?: {
+        inViewportOnly?: boolean;
+        snapshotType?: 'a11y' | 'elements';
+        maxElements?: number;
+      }) => Promise<SnapshotResult>;
     }
   }
 }

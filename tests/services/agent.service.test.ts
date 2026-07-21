@@ -202,14 +202,16 @@ describe('AgentService', () => {
       const service = new AgentService({
         schema: 'anthropic',
         maxActions: 3,
-        maxSnapshotElements: 40,
+        snapshotType: 'elements',
+        maxSnapshotElements: 30,
       });
       service.before({} as WebdriverIO.Capabilities, [], browser);
       expect(mockInitializeProvider).toHaveBeenCalledWith(
         expect.objectContaining({
           schema: 'anthropic',
           maxActions: 3,
-          maxSnapshotElements: 40,
+          snapshotType: 'elements',
+          maxSnapshotElements: 30,
         }),
       );
     });
@@ -240,6 +242,7 @@ describe('AgentService', () => {
         browser,
         healConfig,
         expect.any(Function),
+        'elements',
       );
     });
 
@@ -269,6 +272,7 @@ describe('AgentService', () => {
         browser,
         config,
         expect.any(Function),
+        'elements',
       );
     });
 
@@ -503,30 +507,61 @@ describe('AgentService', () => {
     });
   });
 
-  // ── maxSnapshotElements propagation ─────────────────────────
+  // ── snapshot config propagation ──────────────────────────────
 
-  describe('maxSnapshotElements', () => {
-    it('passes maxSnapshotElements to getSnapshot', async () => {
-      const service = new AgentService({ maxSnapshotElements: 40 });
-      service.before({} as WebdriverIO.Capabilities, [], browser);
-
-      await agentCommand('click button');
-
-      expect(mockGetSnapshot).toHaveBeenCalledWith(
-        browser,
-        expect.objectContaining({ maxElements: 40 }),
-      );
-    });
-
-    it('passes undefined when maxSnapshotElements is not set', async () => {
+  describe('snapshot config', () => {
+    it('passes default options to snapshot command', async () => {
       const service = new AgentService();
       service.before({} as WebdriverIO.Capabilities, [], browser);
 
+      const snapshotCommand = (browser.addCommand as Mock).mock.calls.find(
+        (call: unknown[]) => call[0] === 'snapshot',
+      )?.[1];
+      await snapshotCommand();
+
+      expect(mockGetSnapshot).toHaveBeenCalledWith(
+        browser,
+        expect.objectContaining({
+          inViewportOnly: true,
+          snapshotType: undefined,
+          maxElements: undefined,
+        }),
+      );
+    });
+
+    it('passes snapshotType and maxElements through', async () => {
+      const service = new AgentService();
+      service.before({} as WebdriverIO.Capabilities, [], browser);
+
+      const snapshotCommand = (browser.addCommand as Mock).mock.calls.find(
+        (call: unknown[]) => call[0] === 'snapshot',
+      )?.[1];
+      await snapshotCommand({ snapshotType: 'elements', maxElements: 20 });
+
+      expect(mockGetSnapshot).toHaveBeenCalledWith(
+        browser,
+        expect.objectContaining({
+          snapshotType: 'elements',
+          maxElements: 20,
+        }),
+      );
+    });
+
+    it('propagates snapshotType and maxSnapshotElements from config to agent', async () => {
+      const service = new AgentService({
+        snapshotType: 'elements',
+        maxSnapshotElements: 15,
+      });
+      service.before({} as WebdriverIO.Capabilities, [], browser);
+
       await agentCommand('click button');
 
       expect(mockGetSnapshot).toHaveBeenCalledWith(
         browser,
-        expect.objectContaining({ maxElements: undefined }),
+        expect.objectContaining({
+          snapshotType: 'elements',
+          maxElements: 15,
+        }),
       );
     });
   });

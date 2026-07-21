@@ -20,6 +20,7 @@ export function installInterceptors(
   browser: WebdriverIO.Browser,
   config: HealConfig,
   send: (prompt: PromptInput) => Promise<string>,
+  snapshotType?: 'a11y' | 'elements',
 ): void {
   if (!config.enabled) return;
   if (!config.commands || config.commands.length === 0) return;
@@ -64,7 +65,7 @@ export function installInterceptors(
   for (const command of config.commands) {
     browser.overwriteCommand(command, async function (origCommand, ...args: unknown[]) {
       const selector = getSelector(this);
-      return withHeal(browser, command, selector, origCommand, args, send, maxAttempts, settleDelay, waitForHealing);
+      return withHeal(browser, command, selector, origCommand, args, send, maxAttempts, settleDelay, waitForHealing, snapshotType);
     }, true);
   }
 }
@@ -98,6 +99,7 @@ async function withHeal(
   maxAttempts: number,
   settleDelay: number,
   waitForHealing: number,
+  snapshotType?: 'a11y' | 'elements',
 ): Promise<unknown> {
   // Cap waitForTimeout so healing kicks in quickly instead of
   // waiting the full WDIO default on a known-broken selector.
@@ -141,7 +143,7 @@ async function withHeal(
 
     log.warn(`[Auto-Heal] Command "${commandName}" failed for selector "${selector}". Attempting LLM heal...`);
 
-    const healedSelector = await healSelector(browser, selector, commandName, send, maxAttempts);
+    const healedSelector = await healSelector(browser, selector, commandName, send, maxAttempts, snapshotType);
 
     if (!healedSelector) {
       healingReport.addEvent({
@@ -191,13 +193,14 @@ async function captureSuggestion(
   origCommand: Function,
   args: unknown[],
   send: (prompt: PromptInput) => Promise<string>,
+  snapshotType?: 'a11y' | 'elements',
 ): Promise<unknown> {
   try {
     return await origCommand(...args);
   } catch (error) {
     if (selector && isElementNotFoundError(error)) {
       log.info(`[FixingSuggestions] Capturing suggestion for "${selector}" (${command})`);
-      const suggestion = await suggestFix(browser, selector, command, send);
+      const suggestion = await suggestFix(browser, selector, command, send, snapshotType);
       if (suggestion) {
         fixingSuggestionsStore.addSuggestion({
           command,
@@ -243,6 +246,7 @@ export function installFixingSuggestionsInterceptor(
   browser: WebdriverIO.Browser,
   config: FixingSuggestionsConfig,
   send: (prompt: PromptInput) => Promise<string>,
+  snapshotType?: 'a11y' | 'elements',
 ): void {
   if (!config.enabled) return;
   if (!config.commands || config.commands.length === 0) return;
@@ -271,7 +275,7 @@ export function installFixingSuggestionsInterceptor(
   for (const command of config.commands) {
     browser.overwriteCommand(command, async function (origCommand, ...args: unknown[]) {
       const selector = getSelector(this);
-      return captureSuggestion(browser, command, selector, origCommand, args, send);
+      return captureSuggestion(browser, command, selector, origCommand, args, send, snapshotType);
     }, true);
   }
 }
