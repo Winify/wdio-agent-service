@@ -40,6 +40,7 @@ export const config: WebdriverIO.Config = {
         maxActions: 3,
         timeout: 10_000,
         autoHeal: { enabled: true, commands: ['tap'], maxAttempts: 2 },
+        // fixingSuggestions: { enabled: true, commands: ['tap'] },
       },
     ],
   ],
