@@ -180,3 +180,69 @@ export function buildPrompt(
     user: getUserPrompt(elements, userRequest, maxActions, platform),
   };
 }
+
+// ── Healing / fixing prompts ────────────────────────────────────
+
+const healingSystemPrompt = [
+  'You are a test healing assistant.',
+  'Given a broken selector and a list of page elements, find the element most likely intended.',
+  '',
+  'Each interactive element has an eN ID (e1, e2, ...) with its name, role, and selector.',
+  'Match the broken selector to the closest element by name, role, or selector text.',
+  'Return ONLY: {"target_id":"eN"}',
+].join('\n');
+
+const fixingSuggestionSystemPrompt = [
+  'You are a test selector assistant.',
+  'Given a broken selector and a list of page elements, find the element most likely intended.',
+  '',
+  'Each interactive element has an eN ID (e1, e2, ...) with its name, role, and selector.',
+  'Match the broken selector to the closest element by name, role, or selector text.',
+  'Return ONLY: {"target_id":"eN","reasoning":"<why this matches>"}',
+].join('\n');
+
+function getHealingUserPrompt(elements: string, brokenSelector: string, actionType: string): string {
+  return [
+    '<broken_selector>',
+    brokenSelector,
+    '</broken_selector>',
+    '',
+    '<intended_action>',
+    actionType,
+    '</intended_action>',
+    '',
+    '<elements>',
+    elements,
+    '</elements>',
+  ].join('\n');
+}
+
+/**
+ * Build a prompt for self-healing: given a broken selector, find the
+ * intended element in the current page snapshot and return its virtual ID.
+ */
+export function buildHealingPrompt(
+  elements: string,
+  brokenSelector: string,
+  actionType: string,
+): PromptInput {
+  return {
+    system: healingSystemPrompt,
+    user: getHealingUserPrompt(elements, brokenSelector, actionType),
+  };
+}
+
+/**
+ * Build a prompt for fixing suggestions: same as healing but also asks
+ * the LLM to provide reasoning for the match.
+ */
+export function buildFixingSuggestionPrompt(
+  elements: string,
+  brokenSelector: string,
+  actionType: string,
+): PromptInput {
+  return {
+    system: fixingSuggestionSystemPrompt,
+    user: getHealingUserPrompt(elements, brokenSelector, actionType),
+  };
+}

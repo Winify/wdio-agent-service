@@ -1,4 +1,5 @@
 import type { PromptInput } from '../types';
+import { buildHealingPrompt, buildFixingSuggestionPrompt } from '../prompts';
 import { getSnapshot } from '../scripts/get-snapshot';
 import logger from '@wdio/logger';
 
@@ -36,30 +37,7 @@ export async function healSelector(
       }
 
       // Ask the LLM to find the intended element
-      const systemPrompt = [
-        'You are a test healing assistant.',
-        'Given a broken selector and a list of page elements, find the element most likely intended.',
-        '',
-        'Each interactive element has an eN ID (e1, e2, ...) with its name, role, and selector.',
-        'Match the broken selector to the closest element by name, role, or selector text.',
-        'Return ONLY: {"target_id":"eN"}',
-      ].join('\n');
-
-      const userPrompt = [
-        '<broken_selector>',
-        brokenSelector,
-        '</broken_selector>',
-        '',
-        '<intended_action>',
-        actionType,
-        '</intended_action>',
-        '',
-        '<elements>',
-        text,
-        '</elements>',
-      ].join('\n');
-
-      const rawResponse = await send({ system: systemPrompt, user: userPrompt });
+      const rawResponse = await send(buildHealingPrompt(text, brokenSelector, actionType));
       log.warn(`[Auto-Heal] LLM raw response: ${rawResponse.substring(0, 300)}`);
       const parsed = parseHealingResponse(rawResponse);
 
@@ -108,30 +86,7 @@ export async function suggestFix(
       return null;
     }
 
-    const systemPrompt = [
-      'You are a test selector assistant.',
-      'Given a broken selector and a list of page elements, find the element most likely intended.',
-      '',
-      'Each interactive element has an eN ID (e1, e2, ...) with its name, role, and selector.',
-      'Match the broken selector to the closest element by name, role, or selector text.',
-      'Return ONLY: {"target_id":"eN","reasoning":"<why this matches>"}',
-    ].join('\n');
-
-    const userPrompt = [
-      '<broken_selector>',
-      brokenSelector,
-      '</broken_selector>',
-      '',
-      '<intended_action>',
-      actionType,
-      '</intended_action>',
-      '',
-      '<elements>',
-      text,
-      '</elements>',
-    ].join('\n');
-
-    const rawResponse = await send({ system: systemPrompt, user: userPrompt });
+    const rawResponse = await send(buildFixingSuggestionPrompt(text, brokenSelector, actionType));
     log.debug(`[FixingSuggestions] LLM response: ${rawResponse.substring(0, 300)}`);
     const parsed = parseHealingResponse(rawResponse);
 
