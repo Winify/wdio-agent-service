@@ -25,7 +25,7 @@ pnpm test:mobile      # wdio wdio.appium.conf.ts
 |-----------|---------|-------------|
 | `types/` | Interfaces, WDIO augmentation | `index.ts` |
 | `services/` | WDIO plugin lifecycle, custom commands | `agent.service.ts` |
-| `providers/` | LLM adapter (anthropic + openai) | `send.ts`, `index.ts` |
+| `providers/` | LLM adapter (anthropic, openai, ollama) | `send.ts`, `index.ts` |
 | `commands/` | LLM response parser + action executor | `parse-llm-response.ts`, `execute-agent-action.ts` |
 | `prompts/` | System/user prompt builders | `index.ts` |
 | `healing/` | Interceptor, LLM healer, report store, fixing suggestions | `interceptor.ts`, `healer.ts`, `report.ts`, `fixing-suggestions.ts` |
@@ -57,7 +57,7 @@ browser.getFixingSuggestions()                       // selector fix suggestions
 ```ts
 // wdio.conf.ts
 services: [['agent', {
-  schema: 'openai',                    // 'anthropic' | 'openai'
+  schema: 'openai',                    // 'anthropic' | 'openai' | 'ollama'
   providerUrl: 'http://localhost:1234',
   model: 'qwen/qwen3.5-4b',
   maxActions: 3,                       // max actions per LLM response
@@ -75,7 +75,7 @@ services: [['agent', {
 
 ## Provider
 
-Two schemas: `anthropic` (Messages API) + `openai` (Chat Completions). Any OpenAI-compatible endpoint works. Ollama detected by port 11434 or `/api/chat` path. Config `send` override bypasses built-in logic.
+Three schemas: `anthropic` (Messages API), `openai` (Chat Completions), `ollama` (native API). `providerUrl` and `model` are required unless using `send` override. Config `send` override bypasses built-in logic.
 
 ## Mobile
 

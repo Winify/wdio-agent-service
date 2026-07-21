@@ -189,7 +189,6 @@ describe('AgentService', () => {
       service.before({} as WebdriverIO.Capabilities, [], browser);
       expect(mockInitializeProvider).toHaveBeenCalledWith(
         expect.objectContaining({
-          schema: 'openai',
           maxActions: 1,
           timeout: 30000,
           maxRetries: 2,

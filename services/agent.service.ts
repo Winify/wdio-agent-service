@@ -36,10 +36,9 @@ export default class AgentService implements Services.ServiceInstance {
 
   constructor(serviceOptions: AgentServiceConfig = {}) {
     this.resolvedConfig = {
-      schema: serviceOptions.schema ?? 'openai',
+      schema: serviceOptions.schema,
       providerUrl: serviceOptions.providerUrl,
       model: serviceOptions.model,
-      token: serviceOptions.token,
       maxActions: serviceOptions.maxActions ?? 1,
       timeout: serviceOptions.timeout ?? 30000,
       maxRetries: serviceOptions.maxRetries ?? 2,

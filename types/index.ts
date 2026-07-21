@@ -4,10 +4,11 @@ import type { SnapshotResult } from '@wdio/elements';
 // ── LLM schema types ──────────────────────────────────────────
 /**
  * API schema format for the LLM endpoint.
- * - 'openai': OpenAI Chat Completions format (works with Ollama, LM Studio, OpenRouter, etc.)
+ * - 'openai': OpenAI Chat Completions format (works with LM Studio, OpenRouter, etc.)
  * - 'anthropic': Anthropic Messages format
+ * - 'ollama': Ollama native API format
  */
-export type ProviderSchema = 'anthropic' | 'openai';
+export type ProviderSchema = 'anthropic' | 'openai' | 'ollama';
 
 // ── Platform ──────────────────────────────────────────────────
 export type Platform = 'browser' | 'ios' | 'android';
@@ -47,19 +48,16 @@ export interface FixingSuggestionsConfig {
 }
 
 export interface AgentServiceConfig {
-  /** API schema format. 'openai' works with Ollama, LM Studio, OpenRouter, etc. Default: 'openai' */
+  /** API schema format. 'openai' works with LM Studio, OpenRouter, etc. Use 'ollama' for Ollama native API. */
   schema?: ProviderSchema;
 
   /** @deprecated Use `schema` instead. Mapped automatically with a warning. */
   provider?: string;
 
-  /** LLM API endpoint base URL. Default: http://localhost:11434 */
+  /** LLM API endpoint base URL. Required unless `send` override is set. */
   providerUrl?: string;
 
-  /** API token. Falls back to schema-specific env vars (ANTHROPIC_API_KEY, OPENAI_API_KEY) */
-  token?: string;
-
-  /** LLM model name. Default: qwen2.5-coder:7b */
+  /** LLM model name. Required unless `send` override is set. */
   model?: string;
 
   /** Maximum actions per LLM response. Default: 1 */

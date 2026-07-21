@@ -23,7 +23,12 @@ describe('initializeProvider', () => {
 
   it('warns when both send override and schema are set', async () => {
     const mockSend = vi.fn().mockResolvedValue('mock');
-    const config: AgentServiceConfig = { send: mockSend, schema: 'anthropic' };
+    const config: AgentServiceConfig = {
+      send: mockSend,
+      schema: 'anthropic',
+      providerUrl: 'http://x',
+      model: 'm',
+    };
 
     const provider = initializeProvider(config);
     const result = await provider.send({ system: 's', user: 'u' });
