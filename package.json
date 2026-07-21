@@ -6,7 +6,7 @@
   },
   "version": "0.2.0",
   "author": "Vince Graics",
-  "description": "WebdriverIO plugin for agentic browser actions. Integrates into WebdrverIO codebase/ecosystem.",
+  "description": "WebdriverIO plugin for agentic browser actions. Integrates into codebase/ecosystem.",
   "keywords": [
     "wdio-plugin",
     "wdio-service",

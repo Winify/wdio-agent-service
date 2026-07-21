@@ -55,7 +55,7 @@ describe('resolveLlmConfig', () => {
       const call = mockFetch.mock.calls[0];
       expect(call[0]).toBe('https://api.anthropic.com/v1/messages');
       const body = JSON.parse(call[1].body);
-      expect(body.model).toBe('claude-sonnet-4-20250514');
+      expect(body.model).toBe('claude-haiku-4-5-20251001');
       expect(body.system).toBe('be helpful');
       expect(body.messages).toEqual([{ role: 'user', content: 'click the button' }]);
       expect(body.max_tokens).toBe(1024);

@@ -49,7 +49,7 @@ export function resolveLlmConfig(config: AgentServiceConfig): LLMProvider {
   const endpoint = config.providerUrl
     ?? (schema === 'anthropic' ? 'https://api.anthropic.com' : 'http://localhost:11434');
   const model = config.model
-    ?? (schema === 'anthropic' ? 'claude-sonnet-4-20250514' : 'qwen2.5-coder:7b');
+    ?? (schema === 'anthropic' ? 'claude-haiku-4-5-20251001' : 'qwen2.5-coder:7b');
 
   const apiKey = config.token
     ?? (schema === 'anthropic'
