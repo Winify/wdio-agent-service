@@ -13,7 +13,7 @@ import { getSnapshot } from '../scripts/get-snapshot';
 import { buildPrompt } from '../prompts';
 import { parseLlmResponse, resolveActionTargets } from '../commands/parse-llm-response';
 import { executeAgentAction } from '../commands/execute-agent-action';
-import { installInterceptors, installFixingSuggestionsInterceptor } from '../healing/interceptor';
+import { installInterceptors, installFixingSuggestionsInterceptor, installCombinedInterceptors } from '../healing/interceptor';
 import { healingReport, formatHealingSummary } from '../healing/report';
 import { fixingSuggestionsStore, formatFixingSuggestions } from '../healing/fixing-suggestions';
 import logger from '@wdio/logger';
@@ -59,21 +59,26 @@ export default class AgentService implements Services.ServiceInstance {
   ): void {
     this.provider = initializeProvider(this.resolvedConfig);
 
-    // Install self-healing interceptors if configured
+    // Install interceptors
     healingReport.clear();
-    if (this.resolvedConfig.autoHeal?.enabled) {
-      installInterceptors(browser, this.resolvedConfig.autoHeal, this.provider.send.bind(this.provider), this.resolvedConfig.snapshotType);
-    }
-
-    // Install fixing suggestions interceptors if configured
     fixingSuggestionsStore.clear();
-    if (this.resolvedConfig.fixingSuggestions?.enabled) {
-      installFixingSuggestionsInterceptor(
-        browser,
-        this.resolvedConfig.fixingSuggestions,
+
+    const healConfig = this.resolvedConfig.autoHeal;
+    const fixConfig = this.resolvedConfig.fixingSuggestions;
+
+    if (healConfig?.enabled && fixConfig?.enabled) {
+      installCombinedInterceptors(
+        browser, healConfig, fixConfig,
         this.provider.send.bind(this.provider),
         this.resolvedConfig.snapshotType,
       );
+    } else {
+      if (healConfig?.enabled) {
+        installInterceptors(browser, healConfig, this.provider.send.bind(this.provider), this.resolvedConfig.snapshotType);
+      }
+      if (fixConfig?.enabled) {
+        installFixingSuggestionsInterceptor(browser, fixConfig, this.provider.send.bind(this.provider), this.resolvedConfig.snapshotType);
+      }
     }
 
     // Register the main agent command

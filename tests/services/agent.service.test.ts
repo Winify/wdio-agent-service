@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, type Mock } from 'vitest';
 
 // ── Hoisted mocks (vi.mock factories are hoisted; variables must be too) ─
 
@@ -12,6 +12,7 @@ const {
   mockExecuteAgentAction,
   mockInstallInterceptors,
   mockInstallFixingSuggestionsInterceptor,
+  mockInstallCombinedInterceptors,
   mockHealingAddEvent,
   mockHealingGetReport,
   mockHealingClear,
@@ -34,6 +35,7 @@ const {
   mockExecuteAgentAction: vi.fn(),
   mockInstallInterceptors: vi.fn(),
   mockInstallFixingSuggestionsInterceptor: vi.fn(),
+  mockInstallCombinedInterceptors: vi.fn(),
   mockHealingAddEvent: vi.fn(),
   mockHealingGetReport: vi.fn(),
   mockHealingClear: vi.fn(),
@@ -73,6 +75,8 @@ vi.mock('../../healing/interceptor.js', () => ({
   installInterceptors: (...args: unknown[]) => mockInstallInterceptors(...(args as [unknown, unknown, unknown])),
   installFixingSuggestionsInterceptor: (...args: unknown[]) =>
     mockInstallFixingSuggestionsInterceptor(...(args as [unknown, unknown, unknown])),
+  installCombinedInterceptors: (...args: unknown[]) =>
+    mockInstallCombinedInterceptors(...(args as [unknown, unknown, unknown, unknown, unknown])),
 }));
 
 vi.mock('../../healing/report.js', () => ({
@@ -127,7 +131,7 @@ function resetAllMocks(): void {
     mockGetSnapshot, mockBuildPrompt,
     mockParseLlmResponse, mockResolveActionTargets,
     mockExecuteAgentAction, mockInstallInterceptors,
-    mockInstallFixingSuggestionsInterceptor,
+    mockInstallFixingSuggestionsInterceptor, mockInstallCombinedInterceptors,
     mockHealingAddEvent, mockHealingGetReport, mockHealingClear,
     mockFormatHealingSummary,
     mockFixingSuggestionsAddSuggestion, mockFixingSuggestionsGetReport, mockFixingSuggestionsClear,
@@ -280,6 +284,40 @@ describe('AgentService', () => {
       const service = new AgentService({ fixingSuggestions: config });
       service.before({} as WebdriverIO.Capabilities, [], browser);
       expect(mockInstallFixingSuggestionsInterceptor).not.toHaveBeenCalled();
+    });
+
+    it('installs combined interceptors when both autoHeal and fixingSuggestions are enabled', () => {
+      const healConfig: HealConfig = { enabled: true, commands: ['click'], maxAttempts: 2 };
+      const fixConfig: FixingSuggestionsConfig = { enabled: true, commands: ['click', 'setValue'] };
+      const service = new AgentService({ autoHeal: healConfig, fixingSuggestions: fixConfig });
+      service.before({} as WebdriverIO.Capabilities, [], browser);
+      expect(mockInstallCombinedInterceptors).toHaveBeenCalledWith(
+        browser,
+        healConfig,
+        fixConfig,
+        expect.any(Function),
+        'elements',
+      );
+      expect(mockInstallInterceptors).not.toHaveBeenCalled();
+      expect(mockInstallFixingSuggestionsInterceptor).not.toHaveBeenCalled();
+    });
+
+    it('calls installInterceptors when only autoHeal is enabled (fixingSuggestions disabled)', () => {
+      const healConfig: HealConfig = { enabled: true, commands: ['click'], maxAttempts: 2 };
+      const service = new AgentService({ autoHeal: healConfig });
+      service.before({} as WebdriverIO.Capabilities, [], browser);
+      expect(mockInstallInterceptors).toHaveBeenCalled();
+      expect(mockInstallFixingSuggestionsInterceptor).not.toHaveBeenCalled();
+      expect(mockInstallCombinedInterceptors).not.toHaveBeenCalled();
+    });
+
+    it('calls installFixingSuggestionsInterceptor when only fixingSuggestions is enabled (autoHeal disabled)', () => {
+      const config: FixingSuggestionsConfig = { enabled: true, commands: ['click', 'tap'] };
+      const service = new AgentService({ fixingSuggestions: config });
+      service.before({} as WebdriverIO.Capabilities, [], browser);
+      expect(mockInstallFixingSuggestionsInterceptor).toHaveBeenCalled();
+      expect(mockInstallInterceptors).not.toHaveBeenCalled();
+      expect(mockInstallCombinedInterceptors).not.toHaveBeenCalled();
     });
   });
 

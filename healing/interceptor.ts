@@ -8,6 +8,44 @@ import logger from '@wdio/logger';
 
 const log = logger('wdio-agent-service');
 
+// ── Shared selector tracker ─────────────────────────────────────
+
+/**
+ * Install a single $() overwrite that tracks element → selector mappings
+ * in a WeakMap. Returns getSelector() which resolves selector from either
+ * the element's .selector property or the WeakMap fallback.
+ *
+ * NOTE: $$() (multi-element lookup) is NOT tracked. Elements obtained via
+ * $$() won't have their selectors in the WeakMap, so healing will rethrow
+ * the original error for those element interactions.
+ */
+function createSelectorTracker(browser: WebdriverIO.Browser): {
+  getSelector: (ctx: unknown) => string | undefined;
+} {
+  const elementSelectors = new WeakMap<object, string>();
+
+  browser.overwriteCommand('$', function (origCommand, selector: string) {
+    const el = origCommand(selector);
+    if (el && typeof el === 'object') {
+      elementSelectors.set(el, selector);
+    }
+    return el;
+  });
+
+  function getSelector(ctx: unknown): string | undefined {
+    if (ctx && typeof ctx === 'object') {
+      const obj = ctx as Record<string, unknown>;
+      if (typeof obj['selector'] === 'string') return obj['selector'];
+      return elementSelectors.get(ctx);
+    }
+    return undefined;
+  }
+
+  return { getSelector };
+}
+
+// ── Auto-Heal Interceptor ───────────────────────────────────────
+
 /**
  * Install auto-heal interceptors on the browser object.
  *
@@ -27,33 +65,7 @@ export function installInterceptors(
 
   log.info(`[Auto-Heal] Enabled for: ${config.commands.join(', ')} (maxAttempts: ${config.maxAttempts})`);
 
-  // WeakMap: element object → selector string. Populated from the $ interceptor
-  // and read back in element-scoped commands. Avoids the single-string race
-  // where $('#a') then $('#b') then a.click() heals with #b's selector.
-  const elementSelectors = new WeakMap<object, string>();
-
-  // Track selectors from $() lookups so element-scoped commands can retrieve
-  // the correct selector even for elements created before the interceptor.
-  // NOTE: $$() (multi-element lookup) is NOT tracked. Elements obtained via
-  // $$() won't have their selectors in the WeakMap, so healing will rethrow
-  // the original error for those element interactions.
-  browser.overwriteCommand('$', function (origCommand, selector: string) {
-    const el = origCommand(selector);
-    if (el && typeof el === 'object') {
-      elementSelectors.set(el, selector);
-    }
-    return el;
-  });
-
-  // Resolve selector from element context
-  function getSelector(ctx: unknown): string | undefined {
-    if (ctx && typeof ctx === 'object') {
-      const obj = ctx as Record<string, unknown>;
-      if (typeof obj['selector'] === 'string') return obj['selector'];
-      return elementSelectors.get(ctx);
-    }
-    return undefined;
-  }
+  const { getSelector } = createSelectorTracker(browser);
 
   const maxAttempts = config.maxAttempts ?? 1;
 
@@ -253,26 +265,55 @@ export function installFixingSuggestionsInterceptor(
 
   log.info(`[FixingSuggestions] Enabled for: ${config.commands.join(', ')}`);
 
-  const elementSelectors = new WeakMap<object, string>();
-
-  browser.overwriteCommand('$', function (origCommand, selector: string) {
-    const el = origCommand(selector);
-    if (el && typeof el === 'object') {
-      elementSelectors.set(el, selector);
-    }
-    return el;
-  });
-
-  function getSelector(ctx: unknown): string | undefined {
-    if (ctx && typeof ctx === 'object') {
-      const obj = ctx as Record<string, unknown>;
-      if (typeof obj['selector'] === 'string') return obj['selector'];
-      return elementSelectors.get(ctx);
-    }
-    return undefined;
-  }
+  const { getSelector } = createSelectorTracker(browser);
 
   for (const command of config.commands) {
+    browser.overwriteCommand(command, async function (origCommand, ...args: unknown[]) {
+      const selector = getSelector(this);
+      return captureSuggestion(browser, command, selector, origCommand, args, send, snapshotType);
+    }, true);
+  }
+}
+
+// ── Combined Interceptor (both features enabled) ─────────────────
+
+/**
+ * Install both auto-heal and fixing-suggestions interceptors using a
+ * single $() overwrite and a single element-scoped overwrite per command.
+ *
+ * autoHeal takes priority: commands in autoHeal get healing wrappers;
+ * fixingSuggestions only applies to commands NOT already covered by autoHeal.
+ */
+export function installCombinedInterceptors(
+  browser: WebdriverIO.Browser,
+  healConfig: HealConfig,
+  fixConfig: FixingSuggestionsConfig,
+  send: (prompt: PromptInput) => Promise<string>,
+  snapshotType?: 'a11y' | 'elements',
+): void {
+  const healCommands = healConfig.commands ?? [];
+  const fixCommands = fixConfig.commands ?? [];
+
+  if (healCommands.length === 0 && fixCommands.length === 0) return;
+
+  const { getSelector } = createSelectorTracker(browser);
+
+  const maxAttempts = healConfig.maxAttempts ?? 1;
+  const settleDelay = healConfig.settleDelay ?? 200;
+  const waitForHealing = healConfig.waitForHealing ?? 1500;
+
+  // Auto-heal wrappers for all heal commands
+  for (const command of healCommands) {
+    browser.overwriteCommand(command, async function (origCommand, ...args: unknown[]) {
+      const selector = getSelector(this);
+      return withHeal(browser, command, selector, origCommand, args, send,
+        maxAttempts, settleDelay, waitForHealing, snapshotType);
+    }, true);
+  }
+
+  // Fixing suggestions only for commands NOT already covered by autoHeal
+  for (const command of fixCommands) {
+    if (healCommands.includes(command)) continue;
     browser.overwriteCommand(command, async function (origCommand, ...args: unknown[]) {
       const selector = getSelector(this);
       return captureSuggestion(browser, command, selector, origCommand, args, send, snapshotType);

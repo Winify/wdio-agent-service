@@ -204,7 +204,7 @@ declare global {
        * Take a snapshot of the current page/app elements.
        * Returns a text tree with eN virtual IDs and an elements map.
        * @param options.inViewportOnly - only include viewport-visible elements (default true)
-       * @param options.snapshotType - 'a11y' (rich tree) or 'elements' (flat list). Default: 'a11y'
+       * @param options.snapshotType - 'a11y' (rich tree) or 'elements' (flat list). Default: 'elements'
        * @param options.maxElements - cap element count in 'elements' mode
        */
       snapshot: (options?: {
