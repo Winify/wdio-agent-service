@@ -2,32 +2,30 @@ import process from 'node:process';
 
 export const config: WebdriverIO.Config = {
   tsConfigPath: './tsconfig.json',
-  specs: ['./test/specs/**/mobile.spec.ts'],
+  specs: ['./test/specs/**/*-mobile.spec.ts'],
   exclude: [],
 
-  // Appium server connection
-  hostname: process.env.APPIUM_HOST ?? '127.0.0.1',
-  port: Number(process.env.APPIUM_PORT ?? 4723),
-  path: process.env.APPIUM_PATH ?? '/',
+  hostname: process.env.APPIUM_HOST || 'localhost',
+  port: Number(process.env.APPIUM_PORT || 4723),
+  path: process.env.APPIUM_PATH || '/',
 
   maxInstances: 1,
 
-  capabilities: [
-    {
-      platformName: 'Android',
-      'appium:deviceName': 'emulator-5554',
-      'appium:platformVersion': '16',
-      'appium:automationName': 'UiAutomator2',
-      'appium:app': 'demo.apk',
+  capabilities: [{
+    platformName: 'Android',
+    'appium:deviceName': process.env.DEVICE_NAME || 'emulator-5554',
+    'appium:platformVersion': process.env.PLATFORM_VERSION || '17',
+    'appium:automationName': 'UiAutomator2',
+    'appium:autoGrantPermissions': true,
+    'appium:autoAcceptAlerts': true,
 
-      'appium:autoGrantPermissions': true,
-      'appium:autoAcceptAlerts': true,
-    },
-  ],
+    'appium:appPackage': 'com.google.android.deskclock',
+    'appium:appActivity': 'com.android.deskclock.DeskClock',
+  }],
 
-  logLevel: 'info',
+  logLevel: 'warn',
   bail: 0,
-  waitforTimeout: 10000,
+  waitforTimeout: 5000,
   connectionRetryTimeout: 120000,
   connectionRetryCount: 3,
 
@@ -35,10 +33,14 @@ export const config: WebdriverIO.Config = {
     [
       'agent',
       {
-        schema: 'openai',
-        providerUrl: 'http://localhost:11434',
-        model: 'qwen2.5-coder:3b',
-        maxActions: 2,
+        schema: process.env.AGENT_SCHEMA || 'openai',
+        providerUrl: process.env.PROVIDER_URL || 'http://localhost:1234',
+        model: process.env.AGENT_MODEL || 'qwen/qwen3.5-4b',
+        snapshotType: 'elements',
+        maxActions: 3,
+        timeout: 10_000,
+        autoHeal: { enabled: true, commands: ['tap'], maxAttempts: 2 },
+        // fixingSuggestions: { enabled: true, commands: ['tap'] },
       },
     ],
   ],

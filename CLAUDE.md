@@ -1,58 +1,84 @@
 # wdio-agent-service
 
-## Quick Start
+WDIO service: natural-language browser commands, self-healing selectors, healing reports.
+
+## Commands
+
+```bash
+pnpm lint              # eslint --fix + tsc --noEmit
+pnpm build             # tsup: types/index.ts → build/ (ESM)
+pnpm test              # vitest unit (tests/**/*.test.ts)
+pnpm test:examples     # build + WDIO specs against test site
+pnpm test:examples-mobile  # build + WDIO mobile specs on emulator
+```
+
+Run from `examples/` directly:
+```bash
+cd examples && pnpm install
+pnpm test             # wdio wdio.conf.ts
+pnpm test:mobile      # wdio wdio.appium.conf.ts
+```
+
+## Project Map
+
+| Directory | Purpose | Key File(s) |
+|-----------|---------|-------------|
+| `types/` | Interfaces, WDIO augmentation | `index.ts` |
+| `services/` | WDIO plugin lifecycle, custom commands | `agent.service.ts` |
+| `providers/` | LLM adapter (anthropic, openai, ollama) | `send.ts`, `index.ts` |
+| `commands/` | LLM response parser + action executor | `parse-llm-response.ts`, `execute-agent-action.ts` |
+| `prompts/` | System/user prompt builders | `index.ts` |
+| `healing/` | Interceptor, LLM healer, report store, fixing suggestions | `interceptor.ts`, `healer.ts`, `report.ts`, `fixing-suggestions.ts` |
+| `scripts/` | Snapshot wrapper (`@wdio/elements`) | `get-snapshot.ts` |
+| `examples/` | WDIO specs + configs (**separate pnpm workspace**) | — |
+
+## Core APIs
+
+```ts
+// Single-pass: snapshot → LLM → execute actions sequentially. Throws on first failure.
+browser.agent("tap the login button", { maxActions?: number })  // default 1
+
+// Self-healing: broken selector → LLM finds replacement → retries with click.
+// Config: autoHeal: { enabled: true, commands: ['click','tap','setValue'], maxAttempts?: number, settleDelay?: number, waitForHealing?: number }
+
+// Fixing suggestions: collect selector fix suggestions without retrying.
+// Config: fixingSuggestions: { enabled: true, commands: ['click','tap','setValue'] }
+
+// Healing report — use canonical formatter:
+browser.getHealingReport() → formatHealingSummary(report) // from healing/report.ts
+
+// Debug / fixing suggestions:
+browser.snapshot({ maxElements?: number })           // dump element tree
+browser.getFixingSuggestions()                       // selector fix suggestions
+```
+
+## Quick Start Config
+
 ```ts
 // wdio.conf.ts
 services: [['agent', {
-  schema: 'openai',                          // 'anthropic' | 'openai'
-  providerUrl: 'http://localhost:1234',       // LM Studio, Ollama, etc.
+  schema: 'openai',                    // 'anthropic' | 'openai' | 'ollama'
+  providerUrl: 'http://localhost:1234',
   model: 'qwen/qwen3.5-4b',
+  maxActions: 3,                       // max actions per LLM response
 }]]
 ```
 
-## Directory Structure
-- `types/` — entry point, all interfaces, global WebdriverIO augmentation
-- `services/` — AgentService (WDIO plugin lifecycle, single-pass + agentic execution)
-- `providers/` — 2-schema LLM adapter (`send.ts`) + factory (`index.ts`)
-- `commands/` — LLM response parser + action executor
-- `prompts/` — single-pass + agentic system/user prompt builders
-- `healing/` — interceptor, LLM healer, report store
-- `scripts/` — `get-snapshot.ts` (wraps `@wdio/elements`)
-- `examples/` — WDIO specs + configs (**separate pnpm workspace**). Specs named by intent: `agent-natural-language.spec.ts`, `self-healing.spec.ts`, `healing-report.spec.ts`.
+## Critical Gotchas
 
-## Build & Test
-- `pnpm lint` — eslint --fix + tsc --noEmit.
-- `pnpm build` — tsup bundles from `types/index.ts` → `build/`. ESM only.
-- `pnpm test` — vitest unit tests (`tests/**/*.test.ts`). Excludes examples.
-- `pnpm test:examples` — build + run WDIO specs against test site.
-- `npx wdio wdio.conf.ts` — WDIO integration specs (run from `examples/` dir).
-- `cd examples && pnpm install` first — `examples/` is a separate pnpm workspace.
-- `tsc --noEmit` — type check. `tsconfig.json` only lists `types/**/*` but follows all imports transitively.
-- pnpm workspace at root; `pnpm add` from root gets "adding to workspace root" error.
+- `examples/` is **separate pnpm workspace**: `cd examples && pnpm install` first. `pnpm add` from root errors.
+- `browser.back()` unreliable on Android emulators — use `browser.execute('mobile: pressKey', { keycode: 4 })`.
+- WDIO skips `implicitWait` for `tap` on mobile (hardcoded in webdriverio). `tap` fails immediately if element missing; `click`/`setValue` wait for `implicitWait` timeout first. Both trigger the self-healing overwrite — difference is timing only.
+- `isElementNotFoundError` matches Appium "could not be located" and tap auto-scroll failures — see `healing/interceptor.ts`.
+- Custom commands (`browser.addCommand`) always return Promises — must `await`.
+- Service `after()` hook output invisible in spec reporter — use `console.log` from `it()` blocks.
 
-## Environment
-- `@wdio/elements` ^1.1.0 from npm. Provides `getSnapshot()` → `{ text, elements }` with `e1, e2...` virtual IDs.
-- `webdriverio ^9.0.0` peer dependency.
-- Any OpenAI-compatible endpoint works with `schema: 'openai'` (LM Studio, Ollama, OpenRouter, etc.).
+## Provider
 
-## Code Patterns
-- eslint: no `as any`, no ternary-as-statement, no `browser.pause()`, camelCase, unused vars match `/^_/`.
-- Agentic loop parse errors don't consume `maxSteps` budget — separate `MAX_CONSECUTIVE_PARSE_ERRORS=3` counter aborts loop on persistent bad output.
-- `formatHealingSummary(report)` in `healing/report.ts` — canonical healing summary formatter. Use this, not inline formatting.
-- WDIO custom commands (`browser.addCommand`) always return Promises — must `await`.
-- Service `after()` hook output is NOT visible in spec reporter (worker isolates stdout). Use `console.log` from `it()` blocks for visible output.
-- `overwriteCommand(name, fn, true)` — third arg `true` = element-scoped interceptor.
-- `@wdio/logger` for logging. Use `log.error()` for messages that should survive filter levels.
+Three schemas: `anthropic` (Messages API), `openai` (Chat Completions), `ollama` (native API). `providerUrl` and `model` are required unless using `send` override. Config `send` override bypasses built-in logic.
 
-## Model Constraints
-- Default to single-pass (`maxSteps: 1`). ReAct loop requires 7B+ models.
-- Compact prompts (~15 lines) for 4B models. Strict JSON output format with explicit examples.
-- Optional `maxSnapshotElements` config (no default cap). Set ~40 for 4B local models.
-- 10-15s LLM timeout for local 4B models.
+## Mobile
 
-## Provider Architecture
-- Two schemas only: `anthropic` (Messages API) and `openai` (Chat Completions).
-- Ollama detected by port 11434 or `/api/chat` path suffix — NOT by localhost hostname.
-- Deprecated `provider` field maps to `schema` with warning. `schema` takes priority.
-- Config `send` override bypasses all built-in logic.
+Env vars in `examples/wdio.appium.conf.ts`: `APPIUM_HOST`, `APPIUM_PORT`, `APPIUM_PATH`, `DEVICE_NAME`, `PLATFORM_VERSION`, `AGENT_SCHEMA`, `PROVIDER_URL`, `AGENT_MODEL`. See config file for defaults.
 
+`APP_PACKAGE` and `APP_ACTIVITY` are hardcoded in the config (not env vars). For ApiDemos, edit the config or set via environment in your own WDIO setup.

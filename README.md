@@ -1,6 +1,6 @@
 # WebdriverIO Agent Service
 
-A WebdriverIO service that adds LLM-powered browser and mobile automation through a simple `browser.agent(prompt)` command. Powered by [@wdio/elements](https://www.npmjs.com/package/@wdio/elements) for element snapshots.
+A WebdriverIO service that adds LLM-powered browser and mobile automation through `browser.agent(prompt)`. Powered by [@wdio/elements](https://www.npmjs.com/package/@wdio/elements) for element snapshots.
 
 ## Why?
 
@@ -9,12 +9,12 @@ Modern UIs change frequently — cookie banners appear, button labels shift, mod
 **The solution: use both.**
 
 ```ts
-// Stable actions → use regular WebdriverIO (fast, free, reliable)
+// Stable actions → regular WebdriverIO (fast, free, reliable)
 await browser.url('https://shop.example.com');
 await browser.$('input#search').setValue('mechanical keyboard');
 await browser.$('button[type="submit"]').click();
 
-// Unpredictable UI → let the LLM handle it (flexible, resilient)
+// Unpredictable UI → LLM handles it (flexible, resilient)
 await browser.agent('accept the cookie consent banner');
 await browser.agent('close any promotional popup');
 
@@ -32,146 +32,126 @@ This hybrid approach lets you:
 ## Installation
 
 ```bash
-npm install wdio-agent-service @wdio/elements
+npm install wdio-agent-service
 ```
 
-**Peer dependencies:** `webdriverio >=9.0.0`, `@wdio/elements >=1.0.0`
+**Peer dependencies:** `webdriverio >=9.0.0`, `@wdio/elements >=1.1.0`, `@wdio/globals >=9.0.0`, `@wdio/types >=9.0.0`
 
-## Configuration
+## Quick Start
 
 Add the service to your `wdio.conf.ts`:
 
 ```ts
-export const config: WebdriverIO.Config = {
-  // ...
-  services: [
-    ['agent', {
-      schema: 'openai', // OpenAI Chat Completions; defaults to local Ollama
-      model: 'qwen2.5-coder:7b',
-      maxActions: 2,
-      maxSteps: 1,          // 1 = single-pass, >1 = ReAct loop
-    }]
-  ],
-};
+services: [
+  ['agent', {
+    schema: 'ollama',
+    providerUrl: 'http://localhost:11434',
+    model: 'qwen2.5-coder:7b',
+    maxActions: 2,
+  }]
+],
 ```
 
-### Config Options
+For a working example with self-healing and LM Studio, see [`examples/wdio.conf.ts`](examples/wdio.conf.ts). Mobile example: [`examples/wdio.appium.conf.ts`](examples/wdio.appium.conf.ts).
 
-| Option           | Type                                                          | Default              | Description                                                                                                                |
-|------------------|---------------------------------------------------------------|----------------------|----------------------------------------------------------------------------------------------------------------------------|
-| `schema`         | `'anthropic' \| 'openai'`                                    | `'openai'`           | Request/response API schema                                                                                               |
-| `providerUrl`    | `string`                                                      | Depends on schema    | API endpoint base URL                                                                                                      |
-| `token`          | `string`                                                      | —                    | API token. Falls back to env vars (`ANTHROPIC_API_KEY`, `OPENAI_API_KEY`)                                                  |
-| `model`          | `string`                                                      | Depends on schema    | Model name (see [Schemas and endpoints](#schemas-and-endpoints) below)                                                    |
-| `maxActions`     | `number`                                                      | `1`                  | Maximum actions per LLM response                                                                                           |
-| `maxSteps`       | `number`                                                      | `1`                  | Agentic loop steps. `1` = single-pass (fast, no loop). `>1` = ReAct loop (iterative observe-think-act)                     |
-| `contextWindow`  | `number`                                                      | `3`                  | Number of recent step-pairs to keep in conversation memory (agentic mode only)                                             |
-| `timeout`        | `number`                                                      | `30000`              | Request timeout in ms                                                                                                      |
-| `maxRetries`     | `number`                                                      | `2`                  | Max retry attempts on retryable errors (5xx, 429, network). Exponential backoff                                            |
-| `maxOutputTokens`| `number`                                                      | `1024`               | Maximum output tokens per LLM response                                                                                     |
-| `maxSnapshotElements` | `number`                                                 | —                    | Limit interactive elements in page snapshot. Set ~40 for 4B local models. No limit by default                             |
-| `autoHeal`       | `HealConfig`                                                  | —                    | Self-healing configuration (see [Self-Healing](#self-healing) below)                                                       |
-| `send`           | `(prompt: PromptInput) => Promise<string>`                    | —                    | Override the built-in adapter entirely. When set, `schema`/`providerUrl`/`token`/`model` are ignored                       |
+## Config Options
+
+| Option | Type | Default | Description |
+|--------|------|---------|-------------|
+| `schema` | `'anthropic' \| 'openai' \| 'ollama'` | — | API wire format. `'ollama'` for Ollama native API, `'openai'` for LM Studio/OpenRouter/etc., `'anthropic'` for Anthropic-compatible endpoints |
+| `providerUrl` | `string` | — | **Required.** API endpoint base URL |
+| `model` | `string` | — | **Required.** Model name |
+| `maxActions` | `number` | `1` | Maximum actions per LLM response |
+| `timeout` | `number` | `30000` | Request timeout in ms |
+| `maxRetries` | `number` | `2` | Max retries on retryable errors (5xx, 429, network). Exponential backoff |
+| `maxOutputTokens` | `number` | `1024` | Maximum output tokens per LLM response |
+| `inViewportOnly` | `boolean` | `true` | Only include viewport-visible elements in snapshots |
+| `snapshotType` | `'a11y' \| 'elements'` | `'elements'` | `'elements'` = flat list (lean, better for small models). `'a11y'` = accessibility tree (rich, token-heavy) |
+| `maxSnapshotElements` | `number` | — | Cap elements in snapshot. Set ~40 for 4B local models |
+| `autoHeal` | `HealConfig` | — | Self-healing config (see [Self-Healing](#self-healing)) |
+| `fixingSuggestions` | `FixingSuggestionsConfig` | — | Fixing suggestions config (see [Fixing Suggestions](#fixing-suggestions)) |
+| `send` | `(prompt: PromptInput) => Promise<string>` | — | Override built-in adapter. When set, `schema`/`providerUrl`/`model` are ignored |
+
+> **Deprecated:** `provider` is an alias for `schema`. It maps automatically with a warning. Use `schema` instead.
 
 ## Usage
 
-The service adds commands to the browser object:
-
 ```ts
-// Single-pass mode (maxSteps: 1)
 const result = await browser.agent('click the login button');
 // result.actions → [{ type: 'CLICK', target: 'button*=Login' }]
-// result.goalAchieved → true
-// result.totalSteps → 1
-
-// Agentic mode (maxSteps > 1) — multi-step ReAct loop
-const result = await browser.agent('fill in the login form and submit', { maxSteps: 3 });
-// result.steps → [{ step: 1, actions: [...], done: false }, ...]
-// result.totalSteps → 2
 ```
-
-### AgentResult
 
 ```ts
 interface AgentResult {
-  actions: AgentAction[];          // Flat list of all executed actions
-  steps: Array<{                   // Detailed step history (agentic mode)
-    step: number;
-    actions: ActionResult[];
-    done: boolean;
-  }>;
-  goalAchieved: boolean;           // Whether the LLM set done=true
-  totalSteps: number;              // Number of loop iterations executed
+  actions: AgentAction[];   // executed actions in order
+}
+
+interface AgentCallOptions {
+  maxActions?: number;      // override maxActions for this call
 }
 ```
 
-### Per-Call Overrides
+```ts
+// Override maxActions per call
+await browser.agent('fill the login form and submit', { maxActions: 3 });
+```
 
-You can override `maxSteps` and `maxActions` per call:
+Complete example specs: [`examples/test/specs/agent.spec.ts`](examples/test/specs/agent.spec.ts) (web) and [`examples/test/specs/agent-mobile.spec.ts`](examples/test/specs/agent-mobile.spec.ts) (Appium).
+
+## Actions
+
+### Browser
+
+| Action | Description | Example Prompt |
+|--------|-------------|----------------|
+| `CLICK` | Click an element | `"click the login button"` |
+| `SET_VALUE` | Type into an input | `"type hello@example.com in the email field"` |
+| `NAVIGATE` | Go to a URL | `"navigate to https://example.com"` |
+
+### Mobile
+
+| Action | Description | Example Prompt |
+|--------|-------------|----------------|
+| `TAP` | Tap an element | `"tap the Sign In button"` |
+| `SET_VALUE` | Type into an input | `"enter admin in the username field"` |
+
+Platform (browser, Android, iOS) is auto-detected. Available actions and prompts adjust accordingly.
+
+## Debug Commands
+
+### `browser.snapshot()`
+
+Dump the current page element tree — useful for debugging what the LLM sees:
 
 ```ts
-await browser.agent('skip onboarding', { maxSteps: 1 });      // force single-pass
-await browser.agent('fill the form', { maxSteps: 3 });        // force agentic loop
-await browser.agent('search for cats', { maxActions: 1 });    // limit to one action
+const snap = await browser.snapshot({
+  inViewportOnly: true,      // default true
+  snapshotType: 'elements',  // 'elements' (flat) or 'a11y' (rich tree)
+  maxElements: 50,           // cap for 'elements' mode
+});
 ```
 
-### Browser Actions
+### `browser.getHealingReport()`
 
-| Action      | Description              | Example Prompt                                |
-|-------------|--------------------------|-----------------------------------------------|
-| `CLICK`     | Click on an element      | `"click the login button"`                    |
-| `SET_VALUE` | Type into an input field | `"type hello@example.com in the email field"` |
-| `NAVIGATE`  | Go to a URL              | `"navigate to https://example.com"`           |
-
-### Mobile Actions
-
-| Action      | Description              | Example Prompt                        |
-|-------------|--------------------------|---------------------------------------|
-| `TAP`       | Tap on an element        | `"tap the Sign In button"`            |
-| `SET_VALUE` | Type into an input field | `"enter admin in the username field"` |
-
-The service auto-detects the platform (browser, Android, iOS) and adjusts the available actions and prompts accordingly.
-
-### Browser Examples
+Retrieve structured healing report (populated when `autoHeal` is enabled):
 
 ```ts
-await browser.agent('accept all cookies');
-await browser.agent('close the newsletter signup modal');
-await browser.agent('click on Settings in the user menu');
-await browser.agent('enter john.doe@test.com in the email input');
+const report = await browser.getHealingReport();
+// { totalEvents: 3, fixableCount: 2, manualReviewCount: 1, events: [...] }
 ```
 
-### Mobile Examples (Appium)
+### `browser.getFixingSuggestions()`
+
+Retrieve fixing suggestions (populated when `fixingSuggestions` is enabled):
 
 ```ts
-await browser.agent('skip the onboarding');
-await browser.agent('accept all cookies');
-await browser.agent('go to Account');
-await browser.agent('fill in admin into username field and password into password field');
+const report = await browser.getFixingSuggestions();
+// { totalEvents: 3, suggestions: [{ command, originalSelector, suggestedSelector, reasoning, timestamp }] }
 ```
-
-## ReAct Agentic Loop
-
-When `maxSteps > 1`, the service enters **agentic mode** using the ReAct (Reasoning + Acting) pattern:
-
-```
-Observe → Think → Act → Observe → Think → Act → ... (until goal achieved or maxSteps reached)
-```
-
-Each step:
-1. **Snapshot** current page elements
-2. **Send** to LLM with conversation history
-3. **Parse** the `{ reasoning, actions, done }` response
-4. **Execute** actions and observe results
-5. **Feed back** action results + updated page state as an "Observation" message
-
-The conversation window is controlled by `contextWindow` (default: 3 step-pairs). Older messages are trimmed to stay within token limits.
-
-Use agentic mode for complex multi-step tasks (form filling, multi-page flows, conditional interactions). Use single-pass mode (`maxSteps: 1`, the default) for simple one-shot actions.
 
 ## Self-Healing
 
-When enabled, the service intercepts element commands and attempts to heal broken selectors. If `click`, `setValue`, or `tap` fails with "element not found", the healer:
+When enabled, the service intercepts element commands and heals broken selectors. If `click`, `setValue`, or `tap` fails with "element not found", the healer:
 
 1. Takes a fresh page snapshot
 2. Asks the LLM to find the most likely intended element
@@ -181,94 +161,100 @@ When enabled, the service intercepts element commands and attempts to heal broke
 services: [
   ['agent', {
     schema: 'openai',
+    providerUrl: 'http://localhost:1234/v1',
+    model: 'qwen/qwen3.5-4b',
     autoHeal: {
       enabled: true,
-      commands: ['click', 'setValue'],    // which commands to intercept
+      commands: ['click', 'setValue'],    // commands to intercept
       maxAttempts: 2,                      // max healing attempts per failure
-      settleDelay: 200,                    // ms to wait for animations after scroll-into-view
+      settleDelay: 200,                    // ms to wait for animations after scroll
+      waitForHealing: 1500,               // ms to wait for element before triggering healing
     },
   }]
 ],
 ```
 
-**Healing decision tree:**
+### Healing decision tree
 
-| Error Pattern                          | Action                                    |
-|----------------------------------------|-------------------------------------------|
-| `stale element reference`              | Re-find element by original selector      |
-| `element click intercepted`            | Scroll into view, retry                   |
-| `invalid element state`                | Re-throw immediately (not healable)       |
-| `element not found` / `no such element`| LLM-based healing, then retry             |
+| Error Pattern | Action |
+|---------------|--------|
+| `stale element reference` | Re-find element by original selector |
+| `element click intercepted` | Scroll into view, retry |
+| `invalid element state` | Re-throw immediately (not healable) |
+| `element not found` / `no such element` | LLM-based healing, then retry |
 
-After a test suite completes, a healing summary is logged:
+After a test suite, a healing summary is logged:
 
 ```
-[Healing] Summary: 2/3 healed successfully
-[Healing]   HEALED: click "#old-btn" → "button*=Sign in"
-[Healing]   HEALED: setValue "#stale-input" → "#email"
-[Healing]   FAILED: click "#gone" (Could not heal selector)
+[Healing] 2 selector(s) can be fixed automatically, 1 need(s) manual review
+[Healing]   FIX: click "#old-btn" → "button*=Sign in"
+[Healing]   FIX: setValue "#stale-input" → "#email"
+[Healing]   MANUAL: click "#gone" — Element not found in page snapshot — update selector manually
 ```
 
-Access the report programmatically:
+## Fixing Suggestions
+
+Like self-healing, but read-only: captures element-not-found errors and asks the LLM what selector to use instead, **without retrying**. Useful for collecting fix suggestions without altering test flow.
 
 ```ts
-const report = await browser.getHealingReport();
-// { totalHeals: 3, successfulHeals: 2, failedHeals: 1, events: [...] }
+services: [
+  ['agent', {
+    schema: 'openai',
+    providerUrl: 'http://localhost:1234/v1',
+    model: 'qwen/qwen3.5-4b',
+    fixingSuggestions: {
+      enabled: true,
+      commands: ['click', 'setValue', 'tap'],
+    },
+  }]
+],
 ```
 
-## Mobile Setup (Appium)
+## Mobile (Appium)
 
-The service works with Appium for Android and iOS automation. Configure your `wdio.conf.ts` with Appium capabilities:
+Works with Appium for Android and iOS. See [`examples/wdio.appium.conf.ts`](examples/wdio.appium.conf.ts) for a complete configuration with emulator capabilities. Example spec: [`examples/test/specs/agent-mobile.spec.ts`](examples/test/specs/agent-mobile.spec.ts) and [`examples/test/specs/self-healing-mobile.spec.ts`](examples/test/specs/self-healing-mobile.spec.ts).
 
-```ts
-export const config: WebdriverIO.Config = {
-  hostname: '127.0.0.1',
-  port: 4723,
-  path: '/',
+## Provider Setup
 
-  capabilities: [{
-    platformName: 'Android',
-    'appium:deviceName': 'emulator-5554',
-    'appium:automationName': 'UiAutomator2',
-    'appium:app': '/path/to/your/app.apk',
-  }],
+`providerUrl` and `model` are **required** unless using a `send` override. `schema` selects the wire format — choose based on your endpoint.
 
-  services: [
-    ['agent', {
-      schema: 'openai',
-      model: 'qwen2.5-coder:7b',
-      maxActions: 5,
-    }]
-  ],
-};
-```
+### Schema reference
 
-## Schemas and endpoints
+| Schema | URL path appended | Request format |
+|--------|-------------------|----------------|
+| `ollama` | `/api/chat` | Ollama native (`stream`, `options.num_predict`) |
+| `openai` | `/v1/chat/completions` | OpenAI Chat Completions (`temperature`, `max_tokens`) |
+| `anthropic` | `/v1/messages` | Anthropic Messages (`system`, `max_tokens`) |
 
-### Schema defaults
-
-| Schema      | Default Model                | Default URL                     | Token Env Var         |
-|-------------|------------------------------|---------------------------------|-----------------------|
-| `openai`    | `qwen2.5-coder:7b`          | `http://localhost:11434` (Ollama) | `OPENAI_API_KEY` when needed |
-| `anthropic` | `claude-sonnet-4-20250514`  | `https://api.anthropic.com`     | `ANTHROPIC_API_KEY`   |
-
-`schema` selects the wire format, not a provider. The OpenAI schema works with OpenAI-compatible servers such as LM Studio and OpenRouter. The default endpoint is local Ollama; configure another endpoint explicitly.
-
-### Using the Anthropic schema
+### Anthropic-compatible endpoints
 
 ```ts
 services: [
   ['agent', {
     schema: 'anthropic',
-    // token defaults to ANTHROPIC_API_KEY env var
+    providerUrl: 'https://your-anthropic-proxy.example.com',
+    model: 'claude-haiku-4-5-20251001',
     maxActions: 3,
   }]
 ],
 ```
 
-### Using a Custom `send` Function
+### OpenAI-compatible endpoints
 
-You can bypass the built-in schema adapter entirely by supplying a `send` function:
+```ts
+services: [
+  ['agent', {
+    schema: 'openai',
+    providerUrl: 'https://api.openai.com',
+    model: 'gpt-4o-mini',
+    maxActions: 2,
+  }]
+],
+```
+
+### Custom `send` function
+
+Bypass the built-in adapter entirely:
 
 ```ts
 services: [
@@ -282,45 +268,72 @@ services: [
 ],
 ```
 
-### Local LLM Setup (Ollama)
+### Ollama Setup
 
 1. Install [Ollama](https://ollama.ai)
 2. Pull a model: `ollama pull qwen2.5-coder:7b`
-3. Run `ollama serve` in the terminal
-4. Ollama runs on `http://localhost:11434` by default
+3. Configure:
 
-For a non-default Ollama host, set `providerUrl` to its native chat endpoint (for example, `http://ollama.internal:11434/api/chat`). For LM Studio use its OpenAI-compatible base URL, for example `http://localhost:1234/v1`.
+```ts
+services: [
+  ['agent', {
+    schema: 'ollama',
+    providerUrl: 'http://localhost:11434',
+    model: 'qwen2.5-coder:7b',
+    maxSnapshotElements: 40,
+  }]
+],
+```
 
-#### Recommended Ollama Models
+**Recommended models:**
 
-| Model               | Size  | Speed   | Accuracy |
-|---------------------|-------|---------|----------|
-| `qwen2.5-coder:3b`  | 1.9GB | Fastest | Good     |
-| `qwen2.5-coder:7b`  | 4.7GB | Fast    | Better   |
-| `qwen2.5-coder:14b` | 9GB   | Medium  | Best     |
+| Model | Size | Speed | Accuracy |
+|-------|------|-------|----------|
+| `qwen2.5-coder:3b` | 1.9GB | Fastest | Good |
+| `qwen2.5-coder:7b` | 4.7GB | Fast | Better |
+
+> For 4B-7B models, set `maxSnapshotElements: ~40` to keep snapshots within local model context limits.
+
+### LM Studio Setup
+
+1. Install [LM Studio](https://lmstudio.ai)
+2. Download a model (Qwen 2.5 Coder 7B, Llama 3.2 3B, etc.)
+3. Start the local inference server — defaults to port `1234`
+4. Configure with `schema: 'openai'` and the `/v1` path:
+
+```ts
+services: [
+  ['agent', {
+    schema: 'openai',
+    providerUrl: 'http://localhost:1234/v1',
+    model: 'qwen/qwen3.5-4b',
+    maxSnapshotElements: 40,
+  }]
+],
+```
 
 ## How It Works
 
-1. `browser.agent(prompt)` captures a page snapshot using `@wdio/elements`' `getSnapshot()` — returns a tree with virtual IDs (e1, e2, ...) and an elements map
+1. `browser.agent(prompt)` captures a page snapshot using `@wdio/elements`' `getSnapshot()` — returns a tree with virtual IDs (`e1`, `e2`, ...) and an elements map
 2. Elements and prompt are sent to the LLM in a structured format
 3. The LLM returns actions using virtual IDs as targets (e.g., `{"action":"CLICK","target":"e1"}`)
 4. Virtual IDs are resolved to real CSS selectors using the elements map
 5. Actions are executed via WebdriverIO
 
-The platform (browser/Android/iOS) is auto-detected, and the prompt and available actions adjust accordingly.
+The platform (browser, Android, iOS) is auto-detected, and the prompt and available actions adjust accordingly.
 
 ## When to Use `agent()` vs Regular Commands
 
-| Scenario                            | Recommendation      |
-|-------------------------------------|---------------------|
+| Scenario | Recommendation |
+|----------|---------------|
 | Static selectors that rarely change | Regular WebdriverIO |
-| Login forms with stable IDs         | Regular WebdriverIO |
-| Cookie consent banners              | `agent()`           |
-| Promotional popups/modals           | `agent()`           |
-| Third-party widgets                 | `agent()`           |
-| Elements with dynamic/generated IDs | `agent()`           |
-| A/B tested UI components            | `agent()`           |
-| Mobile onboarding flows             | `agent()`           |
+| Login forms with stable IDs | Regular WebdriverIO |
+| Cookie consent banners | `agent()` |
+| Promotional popups/modals | `agent()` |
+| Third-party widgets | `agent()` |
+| Elements with dynamic/generated IDs | `agent()` |
+| A/B tested UI components | `agent()` |
+| Mobile onboarding flows | `agent()` |
 
 ## License
 

@@ -1,8 +1,11 @@
 import type { PromptInput } from '../types';
+import { buildHealingPrompt, buildFixingSuggestionPrompt } from '../prompts';
 import { getSnapshot } from '../scripts/get-snapshot';
 import logger from '@wdio/logger';
 
 const log = logger('wdio-agent-service');
+
+// ── Heal selector (runtime self-healing) ────────────────────────
 
 /**
  * Attempt to heal a broken selector by asking the LLM to find
@@ -19,13 +22,14 @@ export async function healSelector(
   actionType: string,
   send: (prompt: PromptInput) => Promise<string>,
   maxAttempts: number = 1,
+  snapshotType?: 'a11y' | 'elements',
 ): Promise<string | null> {
   for (let attempt = 0; attempt < maxAttempts; attempt++) {
     try {
       log.info(`[Auto-Heal] Attempt ${attempt + 1}/${maxAttempts} for "${brokenSelector}" (${actionType})`);
 
       // Snapshot the current page state with eN virtual IDs
-      const { text, elements } = await getSnapshot(browser);
+      const { text, elements } = await getSnapshot(browser, { snapshotType });
 
       if (!text || Object.keys(elements).length === 0) {
         log.warn('[Auto-Heal] Snapshot is empty, cannot heal');
@@ -33,31 +37,8 @@ export async function healSelector(
       }
 
       // Ask the LLM to find the intended element
-      const systemPrompt = [
-        'You are a test healing assistant. A test command failed because an element selector changed.',
-        '',
-        'Given the broken selector and the current page snapshot, find the element most likely intended.',
-        'Elements have virtual IDs (e1, e2, e3...). Use the eN ID as the target_id.',
-        '',
-        'Respond with ONLY a JSON object:',
-        '{"target_id": "eN", "confidence": "high|medium|low", "reasoning": "why you chose this element"}',
-      ].join('\n');
-
-      const userPrompt = [
-        '<broken_selector>',
-        brokenSelector,
-        '</broken_selector>',
-        '',
-        '<intended_action>',
-        actionType,
-        '</intended_action>',
-        '',
-        '<elements>',
-        text,
-        '</elements>',
-      ].join('\n');
-
-      const rawResponse = await send({ system: systemPrompt, user: userPrompt });
+      const rawResponse = await send(buildHealingPrompt(text, brokenSelector, actionType));
+      log.warn(`[Auto-Heal] LLM raw response: ${rawResponse.substring(0, 300)}`);
       const parsed = parseHealingResponse(rawResponse);
 
       if (parsed?.target_id) {
@@ -83,6 +64,50 @@ export async function healSelector(
 
   return null;
 }
+
+// ── Suggest fix (passive, no retry) ─────────────────────────────
+
+/**
+ * Lightweight fix suggestion — no retry loop.
+ * Takes a snapshot, asks the LLM what selector would likely fix the broken one.
+ * Returns the suggested selector and reasoning, or null if the LLM couldn't help.
+ */
+export async function suggestFix(
+  browser: WebdriverIO.Browser,
+  brokenSelector: string,
+  actionType: string,
+  send: (prompt: PromptInput) => Promise<string>,
+  snapshotType?: 'a11y' | 'elements',
+): Promise<{ selector: string; reasoning?: string } | null> {
+  try {
+    const { text, elements } = await getSnapshot(browser, { snapshotType });
+    if (!text || Object.keys(elements).length === 0) {
+      log.warn('[FixingSuggestions] Snapshot is empty, cannot suggest fix');
+      return null;
+    }
+
+    const rawResponse = await send(buildFixingSuggestionPrompt(text, brokenSelector, actionType));
+    log.debug(`[FixingSuggestions] LLM response: ${rawResponse.substring(0, 300)}`);
+    const parsed = parseHealingResponse(rawResponse);
+
+    if (parsed?.target_id) {
+      const el = elements[parsed.target_id];
+      if (el) {
+        const suggestedSelector = el.qualifiedSelector ?? el.selector;
+        return {
+          selector: suggestedSelector,
+          reasoning: parsed.reasoning,
+        };
+      }
+    }
+  } catch (error) {
+    log.warn(`[FixingSuggestions] Failed to get suggestion: ${(error as Error).message}`);
+  }
+
+  return null;
+}
+
+// ── Shared response parser ──────────────────────────────────────
 
 interface HealingResponse {
   target_id?: string;

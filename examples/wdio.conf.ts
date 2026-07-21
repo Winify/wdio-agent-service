@@ -4,7 +4,9 @@ export const config: WebdriverIO.Config = {
   specs: [
     './test/specs/**/*.spec.ts',
   ],
-  exclude: [],
+  exclude: [
+    './test/specs/**/*-mobile.spec.ts',
+  ],
 
   maxInstances: 1,
 
@@ -12,24 +14,22 @@ export const config: WebdriverIO.Config = {
     browserName: 'chrome',
   }],
 
-  logLevel: 'error',
+  logLevel: 'warn',
 
   bail: 0,
 
-  waitforTimeout: 10000,
+  waitforTimeout: 5000,
 
   connectionRetryTimeout: 120000,
   connectionRetryCount: 3,
 
   services: [
     ['agent', {
-      schema: 'openai',                          // 'anthropic' | 'openai'
-      providerUrl: 'http://100.69.254.5:1234',   // LM Studio, Ollama, OpenAI, etc.
-      model: 'qwen/qwen3.5-4b',                  // model name
+      schema: process.env.AGENT_SCHEMA || 'openai',                          // 'anthropic' | 'openai'
+      providerUrl: process.env.PROVIDER_URL || 'http://localhost:1234',   // LM Studio, Ollama, OpenAI, etc.
+      model: process.env.AGENT_MODEL || 'qwen/qwen3.5-4b',                  // model name
       maxActions: 3,                             // max actions per LLM response
-      maxSteps: 1,                               // default: single-pass (fast). >1 = ReAct loop
       timeout: 15000,                            // LLM request timeout (ms)
-      contextWindow: 3,                          // conversation memory window
       autoHeal: {                                // self-healing (opt-in)
         enabled: true,
         commands: ['click', 'setValue'],
