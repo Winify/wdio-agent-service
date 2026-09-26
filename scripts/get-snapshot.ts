@@ -14,6 +14,14 @@ interface ElementInfo {
   [key: string]: unknown;
 }
 
+export interface SnapshotElement {
+  selector: string;
+  qualifiedSelector?: string;
+  label?: string;
+}
+
+export type SnapshotElements = Record<string, SnapshotElement>;
+
 /**
  * Take a page/app snapshot.
  *
@@ -30,7 +38,7 @@ export async function getSnapshot(
     snapshotType?: 'a11y' | 'elements';
     maxElements?: number;
   },
-): Promise<{ text: string; elements: Record<string, { selector: string; qualifiedSelector?: string }> }> {
+): Promise<{ text: string; elements: SnapshotElements }> {
   const snapshotType = options?.snapshotType ?? 'elements';
 
   try {
@@ -49,7 +57,7 @@ export async function getSnapshot(
 async function getA11ySnapshot(
   browser: WebdriverIO.Browser,
   options?: { inViewportOnly?: boolean },
-): Promise<{ text: string; elements: Record<string, { selector: string; qualifiedSelector?: string }> }> {
+): Promise<{ text: string; elements: SnapshotElements }> {
   const result = await wdioGetSnapshot(browser, {
     inViewportOnly: options?.inViewportOnly ?? true,
   });
@@ -70,7 +78,7 @@ async function getA11ySnapshot(
 async function getElementsSnapshot(
   browser: WebdriverIO.Browser,
   options?: { inViewportOnly?: boolean; maxElements?: number },
-): Promise<{ text: string; elements: Record<string, { selector: string; qualifiedSelector?: string }> }> {
+): Promise<{ text: string; elements: SnapshotElements }> {
   const result = await getElements(browser, {
     inViewportOnly: options?.inViewportOnly ?? true,
   });
@@ -85,15 +93,15 @@ async function getElementsSnapshot(
   const sliced = limit ? rawElements.slice(0, limit) : rawElements;
 
   const lines: string[] = [];
-  const elementsMap: Record<string, { selector: string; qualifiedSelector?: string }> = {};
+  const elementsMap: SnapshotElements = {};
 
   for (let i = 0; i < sliced.length; i++) {
     const el = sliced[i];
     const id = `e${i + 1}`;
     const qSel = el.qualifiedSelector ?? el.selector;
-    elementsMap[id] = { selector: el.selector, qualifiedSelector: el.qualifiedSelector };
-
     const label = el.name || el.text || el.role || el.tag || '';
+    elementsMap[id] = { selector: el.selector, qualifiedSelector: el.qualifiedSelector, label };
+
     lines.push(`${id}: ${label} → ${qSel}`);
   }
 

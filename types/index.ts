@@ -47,6 +47,27 @@ export interface FixingSuggestionsConfig {
   commands: ('click' | 'setValue' | 'tap')[];
 }
 
+export interface TypeSafeConfig {
+  /** Enable the Jev decision engine for healing and fixing suggestions. */
+  enabled: boolean;
+  /** Jev also powers single-action browser.agent(). Default: false */
+  agent?: boolean;
+  /** Minimum choice confidence to accept a Jev answer. Default: 0.6 */
+  minConfidence?: number;
+  /** Noul value at or above which the goal gate passes. Default: 0.5 */
+  goalNoulThreshold?: number;
+  /** Throw when the goal gate fails instead of only reporting `goalVerified: false`. Default: false */
+  strictGoalGate?: boolean;
+  /** Jev model id. Default: 'typesafe/jev-1.13' */
+  model?: string;
+  /** Jev request timeout in ms. Default: 15000 */
+  timeoutMs?: number;
+  /** Max retry attempts on retryable errors (5xx, 429, network). Default: 2 */
+  maxRetries?: number;
+  /** Falls back to process.env.OPENROUTER_API_KEY. Required when enabled. */
+  apiKey?: string;
+}
+
 export interface AgentServiceConfig {
   /** API schema format. 'openai' works with LM Studio, OpenRouter, etc. Use 'ollama' for Ollama native API. */
   schema?: ProviderSchema;
@@ -87,6 +108,9 @@ export interface AgentServiceConfig {
 
   /** Fixing suggestions configuration. Default: disabled */
   fixingSuggestions?: FixingSuggestionsConfig;
+
+  /** Jev (TypeSafe System One) decision engine for healing and single-action agent(). Default: disabled */
+  typesafe?: TypeSafeConfig;
 
   /**
    * Override the built-in LLM adapter entirely. When set, schema/providerUrl/model are ignored.
@@ -141,6 +165,10 @@ export interface ActionResult {
 export interface AgentResult {
   /** Flat list of executed actions */
   actions: AgentAction[];
+  /** Which decision engine produced the action. Set only when `typesafe.agent` is enabled. */
+  engine?: 'jev' | 'llm';
+  /** Result of the post-execution goal gate. Undefined when the gate could not run. */
+  goalVerified?: boolean;
 }
 
 // ── Per-call options ─────────────────────────────────────────

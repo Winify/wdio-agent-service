@@ -1,5 +1,6 @@
 import type { FixingSuggestionsConfig, HealConfig, PromptInput } from '../types';
 import type { ChainablePromiseElement } from 'webdriverio';
+import type { JevHealOutcome } from './jev';
 import { healSelector } from './healer';
 import { suggestFix } from './healer';
 import { healingReport } from './report';
@@ -7,6 +8,15 @@ import { fixingSuggestionsStore } from './fixing-suggestions';
 import logger from '@wdio/logger';
 
 const log = logger('wdio-agent-service');
+
+/**
+ * Decision backend override for the not-found path. When present it replaces the
+ * LLM healer entirely — there is no fallback, an `null` outcome means "could not heal".
+ */
+export interface HealEngine {
+  heal: (browser: WebdriverIO.Browser, brokenSelector: string, actionType: string) => Promise<JevHealOutcome | null>;
+  suggestFix: (browser: WebdriverIO.Browser, brokenSelector: string, actionType: string) => Promise<{ selector: string; reasoning?: string } | null>;
+}
 
 // ── Shared selector tracker ─────────────────────────────────────
 
@@ -59,6 +69,7 @@ export function installInterceptors(
   config: HealConfig,
   request: (prompt: PromptInput) => Promise<string>,
   snapshotType?: 'a11y' | 'elements',
+  engine?: HealEngine,
 ): void {
   if (!config.enabled) return;
   if (!config.commands || config.commands.length === 0) return;
@@ -77,7 +88,7 @@ export function installInterceptors(
   for (const command of config.commands) {
     browser.overwriteCommand(command, async function (origCommand, ...args: unknown[]) {
       const selector = getSelector(this);
-      return withHeal(browser, command, selector, origCommand, args, request, maxAttempts, settleDelay, waitForHealing, snapshotType);
+      return withHeal(browser, command, selector, origCommand, args, request, maxAttempts, settleDelay, waitForHealing, snapshotType, engine);
     }, true);
   }
 }
@@ -112,6 +123,7 @@ async function withHeal(
   settleDelay: number,
   waitForHealing: number,
   snapshotType?: 'a11y' | 'elements',
+  engine?: HealEngine,
 ): Promise<unknown> {
   // Cap waitForTimeout so healing kicks in quickly instead of
   // waiting the full WDIO default on a known-broken selector.
@@ -153,16 +165,28 @@ async function withHeal(
     // ── Element not found: selector is stale ──
     if (!isElementNotFoundError(error)) throw error;
 
-    log.warn(`[Auto-Heal] Command "${commandName}" failed for selector "${selector}". Attempting LLM heal...`);
+    const source = engine ? 'Jev' : 'LLM';
+    log.warn(`[Auto-Heal] Command "${commandName}" failed for selector "${selector}". Attempting ${source} heal...`);
 
-    const healedSelector = await healSelector(browser, selector, commandName, request, maxAttempts, snapshotType);
+    let healedSelector: string | null;
+    let runnerUp: string | undefined;
+
+    if (engine) {
+      const outcome = await engine.heal(browser, selector, commandName);
+      healedSelector = outcome?.healed ? outcome.selector : null;
+      runnerUp = outcome?.runnerUp;
+    } else {
+      healedSelector = await healSelector(browser, selector, commandName, request, maxAttempts, snapshotType);
+    }
 
     if (!healedSelector) {
       healingReport.addEvent({
         command: commandName,
         originalSelector: selector,
         fixable: false,
-        suggestion: 'Element not found in page snapshot — update selector manually',
+        suggestion: runnerUp
+          ? `Jev picked "${runnerUp}" as runner-up but confidence was below threshold — verify manually`
+          : 'Element not found in page snapshot — update selector manually',
       });
       log.warn(`[Auto-Heal] Could not heal "${selector}". Throwing original error.`);
       throw error;
@@ -179,7 +203,7 @@ async function withHeal(
         fixable: true,
         suggestion: `Replace "${selector}" with "${healedSelector}"`,
       });
-      log.info(`[Auto-Heal] Healed "${selector}" → "${healedSelector}"`);
+      log.info(`[Auto-Heal] Healed "${selector}" → "${healedSelector}" (${source})`);
       return result;
     } catch (retryError) {
       healingReport.addEvent({
@@ -187,7 +211,7 @@ async function withHeal(
         originalSelector: selector,
         healedSelector,
         fixable: false,
-        suggestion: `LLM suggested "${healedSelector}" but retry failed — verify element state`,
+        suggestion: `${source} suggested "${healedSelector}" but retry failed — verify element state`,
         error: (retryError as Error).message,
       });
       log.warn(`[Auto-Heal] Healed selector "${healedSelector}" also failed.`);
@@ -206,13 +230,16 @@ async function captureSuggestion(
   args: unknown[],
   request: (prompt: PromptInput) => Promise<string>,
   snapshotType?: 'a11y' | 'elements',
+  engine?: HealEngine,
 ): Promise<unknown> {
   try {
     return await origCommand(...args);
   } catch (error) {
     if (selector && isElementNotFoundError(error)) {
       log.info(`[FixingSuggestions] Capturing suggestion for "${selector}" (${command})`);
-      const suggestion = await suggestFix(browser, selector, command, request, snapshotType);
+      const suggestion = engine
+        ? await engine.suggestFix(browser, selector, command)
+        : await suggestFix(browser, selector, command, request, snapshotType);
       if (suggestion) {
         fixingSuggestionsStore.addSuggestion({
           command,
@@ -259,6 +286,7 @@ export function installFixingSuggestionsInterceptor(
   config: FixingSuggestionsConfig,
   request: (prompt: PromptInput) => Promise<string>,
   snapshotType?: 'a11y' | 'elements',
+  engine?: HealEngine,
 ): void {
   if (!config.enabled) return;
   if (!config.commands || config.commands.length === 0) return;
@@ -270,7 +298,7 @@ export function installFixingSuggestionsInterceptor(
   for (const command of config.commands) {
     browser.overwriteCommand(command, async function (origCommand, ...args: unknown[]) {
       const selector = getSelector(this);
-      return captureSuggestion(browser, command, selector, origCommand, args, request, snapshotType);
+      return captureSuggestion(browser, command, selector, origCommand, args, request, snapshotType, engine);
     }, true);
   }
 }
@@ -290,6 +318,7 @@ export function installCombinedInterceptors(
   fixConfig: FixingSuggestionsConfig,
   request: (prompt: PromptInput) => Promise<string>,
   snapshotType?: 'a11y' | 'elements',
+  engine?: HealEngine,
 ): void {
   const healCommands = healConfig.commands ?? [];
   const fixCommands = fixConfig.commands ?? [];
@@ -307,7 +336,7 @@ export function installCombinedInterceptors(
     browser.overwriteCommand(command, async function (origCommand, ...args: unknown[]) {
       const selector = getSelector(this);
       return withHeal(browser, command, selector, origCommand, args, request,
-        maxAttempts, settleDelay, waitForHealing, snapshotType);
+        maxAttempts, settleDelay, waitForHealing, snapshotType, engine);
     }, true);
   }
 
@@ -316,7 +345,7 @@ export function installCombinedInterceptors(
     if (healCommands.includes(command)) continue;
     browser.overwriteCommand(command, async function (origCommand, ...args: unknown[]) {
       const selector = getSelector(this);
-      return captureSuggestion(browser, command, selector, origCommand, args, request, snapshotType);
+      return captureSuggestion(browser, command, selector, origCommand, args, request, snapshotType, engine);
     }, true);
   }
 }

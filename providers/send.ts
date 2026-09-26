@@ -189,7 +189,7 @@ function extractResponse(cfg: ResolvedConfig, data: unknown): string {
 
 // ── HTTP request with retry ───────────────────────────────────
 
-async function request(
+export async function request(
   url: string,
   headers: Record<string, string>,
   body: Record<string, unknown>,
