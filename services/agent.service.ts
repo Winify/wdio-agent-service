@@ -9,14 +9,19 @@ import type {
 } from '../types';
 import 'webdriverio';
 import { initializeProvider } from '../providers';
-import { getSnapshot } from '../scripts/get-snapshot';
+import { getSnapshot, type SnapshotElements } from '../scripts/get-snapshot';
 import { buildPrompt } from '../prompts';
 import { parseLlmResponse, resolveActionTargets } from '../commands/parse-llm-response';
 import { executeAgentAction } from '../commands/execute-agent-action';
 import type { HealEngine } from '../healing/interceptor';
 import { installInterceptors, installFixingSuggestionsInterceptor, installCombinedInterceptors } from '../healing/interceptor';
 import type { JevConfig } from '../healing/jev';
-import { decideAgentActionWithJev, healSelectorWithJev, suggestFixWithJev, verifyGoalWithJev } from '../healing/jev';
+import {
+  DEFAULT_GOAL_NOUL_THRESHOLD,
+  decideAgentActionWithJev,
+  healSelectorWithJev,
+  suggestFixWithJev,
+} from '../healing/jev';
 import { healingReport, formatHealingSummary } from '../healing/report';
 import { fixingSuggestionsStore, formatFixingSuggestions } from '../healing/fixing-suggestions';
 import logger from '@wdio/logger';
@@ -24,6 +29,8 @@ import logger from '@wdio/logger';
 const log = logger('wdio-agent-service');
 
 const GOAL_SETTLE_DELAY_MS = 500;
+const DEFAULT_MAX_STEPS = 5;
+const SCROLL_DELTA_PX = 600;
 
 function detectPlatform(browser: WebdriverIO.Browser): Platform {
   if (browser.isIOS) return 'ios';
@@ -170,11 +177,7 @@ export default class AgentService implements Services.ServiceInstance {
 
     log.info(`[Agent] Prompt: "${prompt}" (platform: ${platform})`);
 
-    const snapshot = await getSnapshot(_browser, {
-      inViewportOnly: this.resolvedConfig.inViewportOnly,
-      snapshotType: this.resolvedConfig.snapshotType,
-      maxElements: this.resolvedConfig.maxSnapshotElements,
-    });
+    const snapshot = await this.takeSnapshot(_browser);
 
     const typesafeAgent = this.resolvedConfig.typesafe?.agent;
     const jevConfig = this.jevConfig;
@@ -185,22 +188,81 @@ export default class AgentService implements Services.ServiceInstance {
     }
 
     if (typesafeAgent && jevConfig && !a11yUncapped) {
-      const decision = await decideAgentActionWithJev(_browser, prompt, platform, snapshot, jevConfig);
-
-      if (decision.engine === 'jev') {
-        const action: AgentAction = { type: decision.action, target: decision.targetId };
-        const actions = await this.executeActions(_browser, resolveActionTargets([action], snapshot.elements));
-        const goalVerified = await this.runGoalGate(
-          _browser, prompt, `${action.type} ${actions[0].target}`, jevConfig,
-        );
-        return { actions, engine: 'jev', goalVerified };
-      }
+      const result = await this.runJevLoop(_browser, prompt, platform, snapshot, jevConfig, maxActions);
+      if (result) return result;
 
       log.warn('[Agent] Jev deferred this intent to the LLM path');
     }
 
     log.debug('[Agent] Snapshot taken, building LLM prompt');
 
+    const actions = await this.runLlmPath(_browser, prompt, snapshot, maxActions, platform);
+
+    return { actions, ...(typesafeAgent ? { engine: 'llm' as const } : {}) };
+  }
+
+  /**
+   * One Jev decision per iteration, action executed, then re-decide against fresh state.
+   * The goal noul rides the same call: a passing read exits the loop before the action runs.
+   * Returns null when Jev declines the very first decision — the caller then owns the LLM path.
+   */
+  private async runJevLoop(
+    _browser: WebdriverIO.Browser,
+    prompt: string,
+    platform: Platform,
+    initialSnapshot: { text: string; elements: SnapshotElements },
+    jevConfig: JevConfig,
+    maxActions: number,
+  ): Promise<AgentResult | null> {
+    const actions: AgentAction[] = [];
+    const maxSteps = this.resolvedConfig.typesafe?.maxSteps ?? DEFAULT_MAX_STEPS;
+    const threshold = jevConfig.goalNoulThreshold ?? DEFAULT_GOAL_NOUL_THRESHOLD;
+    let snapshot = initialSnapshot;
+    let goalVerified: boolean | undefined;
+
+    for (let step = 0; step < maxSteps; step++) {
+      const executed = actions.map((action) => `${action.type} ${action.target}`);
+      const decision = await decideAgentActionWithJev(_browser, prompt, platform, snapshot, jevConfig, executed);
+
+      if (decision.engine === 'llm') {
+        if (step === 0) return null;
+        log.warn('[Agent] Jev deferred mid-loop — running the LLM on the current snapshot');
+        actions.push(...await this.runLlmPath(_browser, prompt, snapshot, maxActions, platform));
+        snapshot = await this.takeSnapshot(_browser);
+        continue;
+      }
+
+      goalVerified = decision.goalMetNoul === null ? undefined : decision.goalMetNoul >= threshold;
+      log.info(`[Agent] Jev step ${step + 1}/${maxSteps}: ${decision.action}, goalMet noul ${decision.goalMetNoul}`);
+
+      if (goalVerified || decision.action === 'DONE') break;
+
+      if (decision.action === 'WAIT') {
+        await sleep(GOAL_SETTLE_DELAY_MS);
+      } else if (decision.action === 'SCROLL') {
+        await _browser.scroll(0, SCROLL_DELTA_PX);
+      } else if (decision.action === 'CLICK' || decision.action === 'TAP') {
+        const action: AgentAction = { type: decision.action, target: decision.targetId };
+        actions.push(...await this.executeActions(_browser, resolveActionTargets([action], snapshot.elements)));
+      }
+
+      snapshot = await this.takeSnapshot(_browser);
+    }
+
+    if (this.resolvedConfig.typesafe?.strictGoalGate && !goalVerified) {
+      throw new Error(`[Agent] Goal not verified after ${actions.length} action(s): ${prompt}`);
+    }
+
+    return { actions, engine: 'jev', goalVerified };
+  }
+
+  private async runLlmPath(
+    _browser: WebdriverIO.Browser,
+    prompt: string,
+    snapshot: { text: string; elements: SnapshotElements },
+    maxActions: number,
+    platform: Platform,
+  ): Promise<AgentAction[]> {
     const llmPrompt = buildPrompt(snapshot.text, prompt, maxActions, platform);
     const response = await this.provider.request(llmPrompt);
     const rawActions = parseLlmResponse(response, maxActions);
@@ -209,8 +271,15 @@ export default class AgentService implements Services.ServiceInstance {
     const actions = resolveActionTargets(rawActions, snapshot.elements);
     log.debug(`[Agent] Parsed ${actions.length} action(s)`);
     await this.executeActions(_browser, actions);
+    return actions;
+  }
 
-    return { actions, ...(typesafeAgent ? { engine: 'llm' as const } : {}) };
+  private takeSnapshot(_browser: WebdriverIO.Browser) {
+    return getSnapshot(_browser, {
+      inViewportOnly: this.resolvedConfig.inViewportOnly,
+      snapshotType: this.resolvedConfig.snapshotType,
+      maxElements: this.resolvedConfig.maxSnapshotElements,
+    });
   }
 
   private async executeActions(
@@ -224,44 +293,6 @@ export default class AgentService implements Services.ServiceInstance {
       }
     }
     return actions;
-  }
-
-  /**
-   * Post-execution Noul check: did the action take effect, and was the intent's goal reached?
-   * Advisory by default (`goalVerified` on the result); `strictGoalGate` turns a failed gate
-   * into a thrown error. Never retries the action — the page is already mutated.
-   */
-  private async runGoalGate(
-    _browser: WebdriverIO.Browser,
-    intent: string,
-    actionTaken: string,
-    jevConfig: JevConfig,
-  ): Promise<boolean | undefined> {
-    const snapshot = {
-      snapshotType: this.resolvedConfig.snapshotType,
-      maxElements: this.resolvedConfig.maxSnapshotElements,
-    };
-
-    await sleep(GOAL_SETTLE_DELAY_MS);
-    let verdict = await verifyGoalWithJev(_browser, intent, actionTaken, jevConfig, snapshot);
-    if (!verdict) {
-      log.warn('[Agent] Goal gate could not run — goalVerified left unset');
-      return undefined;
-    }
-
-    if (!verdict.goalMet) {
-      // Async SPAs settle late; a failed gate is the dominant false-negative, so re-ask once.
-      await sleep(GOAL_SETTLE_DELAY_MS);
-      verdict = await verifyGoalWithJev(_browser, intent, actionTaken, jevConfig, snapshot) ?? verdict;
-    }
-
-    log.info(`[Agent] Goal gate: actionWorked noul ${verdict.noul.actionWorked}, goalMet noul ${verdict.noul.goalMet}`);
-
-    if (verdict.goalMet) return true;
-    if (this.resolvedConfig.typesafe?.strictGoalGate) {
-      throw new Error(`[Agent] Goal not verified after "${actionTaken}": ${intent}`);
-    }
-    return false;
   }
 
   // ── after() hook ─────────────────────────────────────────────

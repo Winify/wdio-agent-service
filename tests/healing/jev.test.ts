@@ -242,38 +242,134 @@ describe('Jev engine', () => {
   // ── decideAgentActionWithJev ────────────────────────────────
 
   describe('decideAgentActionWithJev', () => {
-    it('asks element and action questions in a single call', async () => {
+    it('asks element, action, and goalMet questions in a single call', async () => {
       mockFetch.mockResolvedValue(jevResponse({
         element: choice('e1', 0.9, { e1: 0.9, e2: 0.05, none: 0.05 }),
         action: choice('CLICK', 0.95, { CLICK: 0.95, needs_llm: 0.05 }),
+        goalMet: noul(0.12),
       }));
 
       const decision = await decideAgentActionWithJev(mockBrowser, 'click on JavaScript Alerts', 'browser', SNAPSHOT, CONFIG);
 
       expect(mockFetch).toHaveBeenCalledTimes(1);
       const body = requestBody();
-      expect(Object.keys(body.questions)).toEqual(['element', 'action']);
-      expect(body.questions.element.criteria.e1).toBe('Login → button*=Login.instance(0)');
-      expect(body.questions.action.criteria).toEqual({
-        CLICK: expect.any(String),
-        needs_llm: expect.any(String),
+      expect(Object.keys(body.questions)).toEqual(['element', 'action', 'goalMet']);
+      expect(body.questions.goalMet.type).toBe('noul');
+      expect(body.questions.goalMet.criteria).toEqual({
+        true: 'The page now reflects the completed goal.',
+        false: 'The page does not show the intended result.',
       });
-      expect(body.state).toEqual({ userIntent: 'click on JavaScript Alerts', platform: 'browser' });
-      expect(JSON.stringify(body.state)).not.toContain(SNAPSHOT.text);
+      expect(body.questions.element.criteria.e1).toBe('Login');
+      expect(body.questions.element.criteria.e2).toBe('Email');
+      expect(body.questions.element.criteria.none).toBe('None of the listed elements matches the intent.');
+      expect(body.state).toEqual({
+        userIntent: 'click on JavaScript Alerts',
+        platform: 'browser',
+        elements: ['e1: Login → button*=Login.instance(0)', 'e2: Email → #email'],
+        executed: [],
+      });
 
-      expect(decision).toEqual({ engine: 'jev', action: 'CLICK', targetId: 'e1' });
+      expect(decision).toEqual({ engine: 'jev', action: 'CLICK', targetId: 'e1', goalMetNoul: 0.12 });
+    });
+
+    it('carries already-executed actions as state history', async () => {
+      mockFetch.mockResolvedValue(jevResponse({
+        element: choice('e1', 0.9, { e1: 0.9 }),
+        action: choice('DONE', 0.9, { DONE: 0.9 }),
+        goalMet: noul(0.9),
+      }));
+
+      await decideAgentActionWithJev(
+        mockBrowser, 'click on JavaScript Alerts', 'browser', SNAPSHOT, CONFIG,
+        ['CLICK a*=JavaScript Alerts'],
+      );
+
+      expect(requestBody().state.executed).toEqual(['CLICK a*=JavaScript Alerts']);
+    });
+
+    it('offers WAIT, SCROLL, and DONE alongside the platform action', async () => {
+      mockFetch.mockResolvedValue(jevResponse({
+        element: choice('e1', 0.9, { e1: 0.9 }),
+        action: choice('CLICK', 0.9, { CLICK: 0.9 }),
+        goalMet: noul(0.1),
+      }));
+
+      await decideAgentActionWithJev(mockBrowser, 'click login', 'browser', SNAPSHOT, CONFIG);
+
+      expect(requestBody().questions.action.criteria).toEqual({
+        CLICK: expect.any(String),
+        WAIT: expect.any(String),
+        SCROLL: expect.any(String),
+        DONE: expect.any(String),
+        needs_llm: 'Intent requires typing a value or navigating to a URL.',
+      });
     });
 
     it('offers TAP on mobile platforms', async () => {
       mockFetch.mockResolvedValue(jevResponse({
         element: choice('e1', 0.9, { e1: 0.9 }),
         action: choice('TAP', 0.9, { TAP: 0.9 }),
+        goalMet: noul(0.1),
       }));
 
       const decision = await decideAgentActionWithJev(mockBrowser, 'tap login', 'android', SNAPSHOT, CONFIG);
 
-      expect(Object.keys(requestBody().questions.action.criteria)).toEqual(['TAP', 'needs_llm']);
-      expect(decision).toEqual({ engine: 'jev', action: 'TAP', targetId: 'e1' });
+      expect(Object.keys(requestBody().questions.action.criteria)).toEqual([
+        'TAP', 'WAIT', 'DONE', 'needs_llm',
+      ]);
+      expect(decision).toEqual({ engine: 'jev', action: 'TAP', targetId: 'e1', goalMetNoul: 0.1 });
+    });
+
+    it.each(['WAIT', 'SCROLL', 'DONE'] as const)(
+      'returns %s without a target even when no element matches',
+      async (chosen) => {
+        mockFetch.mockResolvedValue(jevResponse({
+          element: choice('none', 0.9, { none: 0.9 }),
+          action: choice(chosen, 0.9, { [chosen]: 0.9 }),
+          goalMet: noul(0.2),
+        }));
+
+        const decision = await decideAgentActionWithJev(mockBrowser, 'wait for the page', 'browser', SNAPSHOT, CONFIG);
+
+        expect(decision).toEqual({ engine: 'jev', action: chosen, goalMetNoul: 0.2 });
+      },
+    );
+
+    it('passes the raw goalMet noul through', async () => {
+      mockFetch.mockResolvedValue(jevResponse({
+        element: choice('e1', 0.9, { e1: 0.9 }),
+        action: choice('CLICK', 0.9, { CLICK: 0.9 }),
+        goalMet: noul(0.87),
+      }));
+
+      const decision = await decideAgentActionWithJev(mockBrowser, 'click login', 'browser', SNAPSHOT, CONFIG);
+
+      expect(decision).toEqual({ engine: 'jev', action: 'CLICK', targetId: 'e1', goalMetNoul: 0.87 });
+    });
+
+    it('reports a null goalMet noul when the answer is malformed', async () => {
+      mockFetch.mockResolvedValue(jevResponse({
+        element: choice('e1', 0.9, { e1: 0.9 }),
+        action: choice('CLICK', 0.9, { CLICK: 0.9 }),
+        goalMet: { type: 'noul', noul: 'high' },
+      }));
+
+      const decision = await decideAgentActionWithJev(mockBrowser, 'click login', 'browser', SNAPSHOT, CONFIG);
+
+      expect(decision).toEqual({ engine: 'jev', action: 'CLICK', targetId: 'e1', goalMetNoul: null });
+      expect(mockWarn).toHaveBeenCalledWith(expect.stringContaining('Goal noul answer missing or malformed'));
+    });
+
+    it('reports a null goalMet noul when the answer is missing', async () => {
+      mockFetch.mockResolvedValue(jevResponse({
+        element: choice('e1', 0.9, { e1: 0.9 }),
+        action: choice('CLICK', 0.9, { CLICK: 0.9 }),
+      }));
+
+      const decision = await decideAgentActionWithJev(mockBrowser, 'click login', 'browser', SNAPSHOT, CONFIG);
+
+      expect(decision).toEqual({ engine: 'jev', action: 'CLICK', targetId: 'e1', goalMetNoul: null });
+      expect(mockWarn).toHaveBeenCalledWith(expect.stringContaining('Goal noul answer missing or malformed'));
     });
 
     it('defers to the LLM when the action question picks needs_llm', async () => {
@@ -290,10 +386,22 @@ describe('Jev engine', () => {
     it('defers to the LLM when the action choice was not an offered criterion', async () => {
       mockFetch.mockResolvedValue(jevResponse({
         element: choice('e1', 0.9, { e1: 0.9 }),
-        action: choice('SCROLL', 0.9, { SCROLL: 0.9 }),
+        action: choice('NAVIGATE', 0.9, { NAVIGATE: 0.9 }),
       }));
 
       const decision = await decideAgentActionWithJev(mockBrowser, 'click login', 'browser', SNAPSHOT, CONFIG);
+
+      expect(decision).toEqual({ engine: 'llm' });
+      expect(mockWarn).toHaveBeenCalledWith(expect.stringContaining('was not offered'));
+    });
+
+    it('defers to the LLM when the other platform action is chosen', async () => {
+      mockFetch.mockResolvedValue(jevResponse({
+        element: choice('e1', 0.9, { e1: 0.9 }),
+        action: choice('TAP', 0.9, { TAP: 0.9 }),
+      }));
+
+      const decision = await decideAgentActionWithJev(mockBrowser, 'tap login', 'browser', SNAPSHOT, CONFIG);
 
       expect(decision).toEqual({ engine: 'llm' });
     });
@@ -329,6 +437,23 @@ describe('Jev engine', () => {
       const decision = await decideAgentActionWithJev(mockBrowser, 'click login', 'browser', SNAPSHOT, CONFIG);
 
       expect(decision).toEqual({ engine: 'llm' });
+    });
+
+    it('clamps element criteria and state lines to 254 elements plus the none option', async () => {
+      const many = Object.fromEntries(
+        Array.from({ length: 300 }, (_, i) => [`e${i + 1}`, { selector: `#el${i + 1}`, label: `El ${i + 1}` }]),
+      );
+      mockFetch.mockResolvedValue(jevResponse({
+        element: choice('e1', 0.9, { e1: 0.9 }),
+        action: choice('CLICK', 0.9, { CLICK: 0.9 }),
+        goalMet: noul(0.1),
+      }));
+
+      await decideAgentActionWithJev(mockBrowser, 'click login', 'browser', { text: 'many', elements: many }, CONFIG);
+
+      const body = requestBody();
+      expect(Object.keys(body.questions.element.criteria)).toHaveLength(255);
+      expect(body.state.elements).toHaveLength(254);
     });
 
     it('defers to the LLM without fetching when the snapshot has no elements', async () => {

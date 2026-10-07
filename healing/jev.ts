@@ -1,6 +1,6 @@
 import type { Platform } from '../types';
 import { request } from '../providers/send';
-import { getSnapshot, type SnapshotElements } from '../scripts/get-snapshot';
+import { getSnapshot, type SnapshotElement, type SnapshotElements } from '../scripts/get-snapshot';
 import logger from '@wdio/logger';
 
 const log = logger('wdio-agent-service');
@@ -8,7 +8,7 @@ const log = logger('wdio-agent-service');
 const JEV_ENDPOINT = 'https://openrouter.ai/api/alpha/decisions';
 const DEFAULT_MODEL = 'typesafe/jev-1.13';
 const DEFAULT_MIN_CONFIDENCE = 0.6;
-const DEFAULT_GOAL_NOUL_THRESHOLD = 0.5;
+export const DEFAULT_GOAL_NOUL_THRESHOLD = 0.5;
 const DEFAULT_TIMEOUT_MS = 15000;
 const DEFAULT_MAX_RETRIES = 2;
 const MAX_CHOICE_OPTIONS = 255;
@@ -81,12 +81,17 @@ export async function jevDecide(
   return data?.answers ?? {};
 }
 
-function choiceCriteria(elements: SnapshotElements): Record<string, string> {
+// MAX_CHOICE_OPTIONS includes the none option, so the slice leaves room for it —
+// safe whether the API's 255 cap counts none or not.
+function sliceElements(elements: SnapshotElements): [string, SnapshotElement][] {
+  return Object.entries(elements).slice(0, MAX_CHOICE_OPTIONS - 1);
+}
+
+function choiceCriteria(entries: [string, SnapshotElement][], lean = false): Record<string, string> {
   const criteria: Record<string, string> = {};
-  // MAX_CHOICE_OPTIONS includes the none option, so the slice leaves room for it —
-  // safe whether the API's 255 cap counts none or not.
-  for (const [id, el] of Object.entries(elements).slice(0, MAX_CHOICE_OPTIONS - 1)) {
-    criteria[id] = `${el.label || el.selector} → ${el.qualifiedSelector ?? el.selector}`;
+  for (const [id, el] of entries) {
+    const label = el.label || el.selector;
+    criteria[id] = lean ? label : `${label} → ${el.qualifiedSelector ?? el.selector}`;
   }
   criteria[NONE_OPTION] = 'None of the listed elements matches the intent.';
   return criteria;
@@ -147,7 +152,7 @@ async function askElementChoice(
         element: {
           type: 'choice',
           instructions: `Which element is the intended target of the broken selector "${brokenSelector}" (${actionType})?`,
-          criteria: choiceCriteria(elements),
+          criteria: choiceCriteria(sliceElements(elements)),
         },
       },
     );
@@ -230,40 +235,62 @@ export async function suggestFixWithJev(
   };
 }
 
+export type JevAgentDecision =
+  | { engine: 'jev'; action: 'CLICK' | 'TAP'; targetId: string; goalMetNoul: number | null }
+  | { engine: 'jev'; action: 'WAIT' | 'SCROLL' | 'DONE'; goalMetNoul: number | null }
+  | { engine: 'llm' };
+
 export async function decideAgentActionWithJev(
   _browser: WebdriverIO.Browser,
   intent: string,
   platform: Platform,
   snapshot: { text: string; elements: SnapshotElements },
   config: JevConfig,
-): Promise<{ engine: 'jev'; action: 'CLICK' | 'TAP'; targetId: string } | { engine: 'llm' }> {
+  executed: string[] = [],
+): Promise<JevAgentDecision> {
   if (Object.keys(snapshot.elements).length === 0) return { engine: 'llm' };
 
-  const actionCriteria: Record<string, string> = platform === 'browser'
-    ? {
-      CLICK: 'Click the chosen element in place.',
-      [NEEDS_LLM_OPTION]: 'Intent requires typing a value, navigating to a URL, or multiple steps.',
-    }
-    : {
-      TAP: 'Tap the chosen element.',
-      [NEEDS_LLM_OPTION]: 'Intent requires typing a value, navigating to a URL, or multiple steps.',
-    };
+  const platformAction = platform === 'browser' ? 'CLICK' : 'TAP';
+  const actionCriteria: Record<string, string> = {
+    [platformAction]: platform === 'browser' ? 'Click the chosen element in place.' : 'Tap the chosen element.',
+    WAIT: 'The page needs time to settle before the next step.',
+    // browser.scroll is a JS-context command — native Appium sessions have no JS
+    // context, so SCROLL is browser-only until a mobile: scroll mapping exists.
+    ...(platform === 'browser'
+      ? { SCROLL: 'The target element is not visible; scroll the page down.' }
+      : {}),
+    DONE: 'The user intent is already fully achieved; no further action needed.',
+    [NEEDS_LLM_OPTION]: 'Intent requires typing a value or navigating to a URL.',
+  };
+
+  const sliced = sliceElements(snapshot.elements);
+  const elementLines = sliced.map(
+    ([id, el]) => `${id}: ${el.label || el.selector} → ${el.qualifiedSelector ?? el.selector}`,
+  );
 
   let answers: Record<string, JevAnswer>;
   try {
     answers = await jevDecide(
       config,
-      { userIntent: intent, platform },
+      { userIntent: intent, platform, elements: elementLines, executed },
       {
         element: {
           type: 'choice',
           instructions: `Which element accomplishes the user intent: "${intent}"?`,
-          criteria: choiceCriteria(snapshot.elements),
+          criteria: choiceCriteria(sliced, true),
         },
         action: {
           type: 'choice',
           instructions: `Which single action accomplishes the user intent: "${intent}"?`,
           criteria: actionCriteria,
+        },
+        goalMet: {
+          type: 'noul',
+          instructions: `Has the user's goal been achieved: "${intent}"?`,
+          criteria: {
+            true: 'The page now reflects the completed goal.',
+            false: 'The page does not show the intended result.',
+          },
         },
       },
     );
@@ -275,23 +302,32 @@ export async function decideAgentActionWithJev(
   const minConfidence = config.minConfidence ?? DEFAULT_MIN_CONFIDENCE;
   const element = evaluateChoice(answers.element, minConfidence, [NONE_OPTION]);
   const action = evaluateChoice(answers.action, minConfidence, [NEEDS_LLM_OPTION]);
-  if (element.status === 'rejected' || action.status === 'rejected') return { engine: 'llm' };
-  // Anything outside the offered action criteria is a hallucination, not a command to reinterpret.
-  if (!(action.choice in actionCriteria)) {
-    log.warn(`[Jev] Action choice "${action.choice}" was not offered — using the LLM`);
-    return { engine: 'llm' };
+  if (action.status === 'rejected') return { engine: 'llm' };
+
+  const goalAnswer = answers.goalMet;
+  const goalMetNoul = goalAnswer?.type === 'noul' && Number.isFinite(goalAnswer.noul) ? goalAnswer.noul : null;
+  if (goalMetNoul === null) log.warn('[Jev] Goal noul answer missing or malformed — cannot verify');
+
+  const chosen = action.choice;
+  switch (chosen) {
+    case 'WAIT':
+    case 'SCROLL':
+    case 'DONE':
+      return { engine: 'jev', action: chosen, goalMetNoul };
+    case 'CLICK':
+    case 'TAP':
+      // Anything outside the offered action criteria is a hallucination, not a command to reinterpret.
+      if (chosen !== platformAction) break;
+      if (element.status === 'rejected') return { engine: 'llm' };
+      if (!snapshot.elements[element.choice]) {
+        log.warn(`[Jev] Chosen element "${element.choice}" is not in the snapshot — using the LLM`);
+        return { engine: 'llm' };
+      }
+      return { engine: 'jev', action: chosen, targetId: element.choice, goalMetNoul };
   }
 
-  if (!snapshot.elements[element.choice]) {
-    log.warn(`[Jev] Chosen element "${element.choice}" is not in the snapshot — using the LLM`);
-    return { engine: 'llm' };
-  }
-
-  return {
-    engine: 'jev',
-    action: action.choice === 'CLICK' ? 'CLICK' : 'TAP',
-    targetId: element.choice,
-  };
+  log.warn(`[Jev] Action choice "${chosen}" was not offered — using the LLM`);
+  return { engine: 'llm' };
 }
 
 export async function verifyGoalWithJev(

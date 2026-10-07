@@ -50,8 +50,10 @@ export interface FixingSuggestionsConfig {
 export interface TypeSafeConfig {
   /** Enable the Jev decision engine for healing and fixing suggestions. */
   enabled: boolean;
-  /** Jev also powers single-action browser.agent(). Default: false */
+  /** Jev also powers browser.agent(), looping one action per step. Default: false */
   agent?: boolean;
+  /** Max loop iterations per browser.agent() call when `agent` is on. Default: 5 */
+  maxSteps?: number;
   /** Minimum choice confidence to accept a Jev answer. Default: 0.6 */
   minConfidence?: number;
   /** Noul value at or above which the goal gate passes. Default: 0.5 */

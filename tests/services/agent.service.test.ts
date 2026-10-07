@@ -24,7 +24,6 @@ const {
   mockHealSelectorWithJev,
   mockSuggestFixWithJev,
   mockDecideAgentActionWithJev,
-  mockVerifyGoalWithJev,
   mockLogWarn,
   mockLogInfo,
   mockLogDebug,
@@ -51,7 +50,6 @@ const {
   mockHealSelectorWithJev: vi.fn(),
   mockSuggestFixWithJev: vi.fn(),
   mockDecideAgentActionWithJev: vi.fn(),
-  mockVerifyGoalWithJev: vi.fn(),
   mockLogWarn: vi.fn(),
   mockLogInfo: vi.fn(),
   mockLogDebug: vi.fn(),
@@ -109,7 +107,7 @@ vi.mock('../../healing/jev.js', () => ({
   healSelectorWithJev: (...args: unknown[]) => mockHealSelectorWithJev(...args),
   suggestFixWithJev: (...args: unknown[]) => mockSuggestFixWithJev(...args),
   decideAgentActionWithJev: (...args: unknown[]) => mockDecideAgentActionWithJev(...args),
-  verifyGoalWithJev: (...args: unknown[]) => mockVerifyGoalWithJev(...args),
+  DEFAULT_GOAL_NOUL_THRESHOLD: 0.5,
 }));
 
 vi.mock('@wdio/logger', () => ({
@@ -136,6 +134,7 @@ function createMockBrowser(overrides: Record<string, unknown> = {}) {
     addCommand: vi.fn(),
     isIOS: false,
     isAndroid: false,
+    scroll: vi.fn(),
     $: vi.fn(),
     ...overrides,
   } as unknown as WebdriverIO.Browser;
@@ -152,7 +151,7 @@ function resetAllMocks(): void {
     mockFormatHealingSummary,
     mockFixingSuggestionsAddSuggestion, mockFixingSuggestionsGetReport, mockFixingSuggestionsClear,
     mockFormatFixingSuggestions,
-    mockHealSelectorWithJev, mockSuggestFixWithJev, mockDecideAgentActionWithJev, mockVerifyGoalWithJev,
+    mockHealSelectorWithJev, mockSuggestFixWithJev, mockDecideAgentActionWithJev,
     mockLogWarn, mockLogInfo, mockLogDebug, mockLogError,
   ];
   fns.forEach(f => f.mockReset());
@@ -169,11 +168,6 @@ function setDefaults(): void {
   mockHealingGetReport.mockReturnValue({ totalEvents: 0, fixableCount: 0, manualReviewCount: 0, events: [] });
   mockFixingSuggestionsGetReport.mockReturnValue({ totalEvents: 0, suggestions: [] });
   mockDecideAgentActionWithJev.mockResolvedValue({ engine: 'llm' });
-  mockVerifyGoalWithJev.mockResolvedValue({
-    actionWorked: true,
-    goalMet: true,
-    noul: { actionWorked: 0.9, goalMet: 0.9 },
-  });
 }
 
 // ── Tests ─────────────────────────────────────────────────────
@@ -522,21 +516,18 @@ describe('AgentService', () => {
 
       expect(mockDecideAgentActionWithJev).toHaveBeenCalledWith(
         browser, 'type "tomsmith" into the username field', 'browser', SNAPSHOT_RESULT,
-        expect.objectContaining({ apiKey: 'key-a' }),
+        expect.objectContaining({ apiKey: 'key-a' }), [],
       );
       expect(mockProviderSend).toHaveBeenCalled();
       expect(result.engine).toBe('llm');
       expect(result.goalVerified).toBeUndefined();
     });
 
-    it('executes the Jev decision and reports a verified goal', async () => {
-      mockDecideAgentActionWithJev.mockResolvedValueOnce({ engine: 'jev', action: 'CLICK', targetId: 'e1' });
+    it('executes one Jev action and reports a verified goal', async () => {
+      mockDecideAgentActionWithJev
+        .mockResolvedValueOnce({ engine: 'jev', action: 'CLICK', targetId: 'e1', goalMetNoul: 0.1 })
+        .mockResolvedValueOnce({ engine: 'jev', action: 'DONE', goalMetNoul: 0.8 });
       mockResolveActionTargets.mockReturnValueOnce([{ type: 'CLICK', target: 'button*=Login' }]);
-      mockVerifyGoalWithJev.mockResolvedValueOnce({
-        actionWorked: true,
-        goalMet: true,
-        noul: { actionWorked: 0.9, goalMet: 0.8 },
-      });
 
       const service = new AgentService({ typesafe: { enabled: true, apiKey: 'key-a', agent: true } });
       service.before({} as WebdriverIO.Capabilities, [], browser);
@@ -550,9 +541,9 @@ describe('AgentService', () => {
       expect(mockExecuteAgentAction).toHaveBeenCalledWith(
         browser, { type: 'CLICK', target: 'button*=Login' },
       );
-      expect(mockVerifyGoalWithJev).toHaveBeenCalledWith(
-        browser, 'click on JavaScript Alerts', 'CLICK button*=Login',
-        expect.objectContaining({ apiKey: 'key-a' }), expect.any(Object),
+      expect(mockDecideAgentActionWithJev).toHaveBeenCalledWith(
+        browser, 'click on JavaScript Alerts', 'browser', SNAPSHOT_RESULT,
+        expect.objectContaining({ apiKey: 'key-a' }), [],
       );
       expect(mockProviderSend).not.toHaveBeenCalled();
       expect(result).toEqual({
@@ -562,12 +553,120 @@ describe('AgentService', () => {
       });
     });
 
-    it('reports goalVerified false without throwing by default', async () => {
-      mockDecideAgentActionWithJev.mockResolvedValueOnce({ engine: 'jev', action: 'CLICK', targetId: 'e1' });
-      mockVerifyGoalWithJev.mockResolvedValue({
-        actionWorked: true,
-        goalMet: false,
-        noul: { actionWorked: 0.9, goalMet: 0.1 },
+    it('keeps looping while the goal noul is low and accumulates actions', async () => {
+      mockDecideAgentActionWithJev
+        .mockResolvedValueOnce({ engine: 'jev', action: 'CLICK', targetId: 'e1', goalMetNoul: 0.1 })
+        .mockResolvedValueOnce({ engine: 'jev', action: 'CLICK', targetId: 'e2', goalMetNoul: 0.2 })
+        .mockResolvedValueOnce({ engine: 'jev', action: 'DONE', goalMetNoul: 0.9 });
+      mockResolveActionTargets.mockReturnValue([{ type: 'CLICK', target: 'button*=Login' }]);
+
+      const service = new AgentService({ typesafe: { enabled: true, apiKey: 'key-a', agent: true } });
+      service.before({} as WebdriverIO.Capabilities, [], browser);
+
+      const result = await agentCommand('open JavaScript Alerts and click the first alert button');
+
+      expect(mockDecideAgentActionWithJev).toHaveBeenCalledTimes(3);
+      expect(mockDecideAgentActionWithJev).toHaveBeenNthCalledWith(
+        2, browser, 'open JavaScript Alerts and click the first alert button', 'browser', SNAPSHOT_RESULT,
+        expect.objectContaining({ apiKey: 'key-a' }),
+        ['CLICK button*=Login'],
+      );
+      expect(mockExecuteAgentAction).toHaveBeenCalledTimes(2);
+      expect(result.actions).toEqual([
+        { type: 'CLICK', target: 'button*=Login' },
+        { type: 'CLICK', target: 'button*=Login' },
+      ]);
+      expect(result.engine).toBe('jev');
+      expect(result.goalVerified).toBe(true);
+    });
+
+    it('stops looping on DONE and reports the final noul verdict', async () => {
+      mockDecideAgentActionWithJev
+        .mockResolvedValueOnce({ engine: 'jev', action: 'CLICK', targetId: 'e1', goalMetNoul: 0.1 })
+        .mockResolvedValueOnce({ engine: 'jev', action: 'DONE', goalMetNoul: 0.3 });
+
+      const service = new AgentService({ typesafe: { enabled: true, apiKey: 'key-a', agent: true } });
+      service.before({} as WebdriverIO.Capabilities, [], browser);
+
+      const result = await agentCommand('click the login button');
+
+      expect(mockDecideAgentActionWithJev).toHaveBeenCalledTimes(2);
+      expect(result.actions).toHaveLength(1);
+      expect(result.goalVerified).toBe(false);
+    });
+
+    it('runs WAIT and SCROLL steps without executing an element action', async () => {
+      mockDecideAgentActionWithJev
+        .mockResolvedValueOnce({ engine: 'jev', action: 'SCROLL', goalMetNoul: 0.1 })
+        .mockResolvedValueOnce({ engine: 'jev', action: 'WAIT', goalMetNoul: 0.1 })
+        .mockResolvedValueOnce({ engine: 'jev', action: 'DONE', goalMetNoul: 0.9 });
+
+      const service = new AgentService({ typesafe: { enabled: true, apiKey: 'key-a', agent: true } });
+      service.before({} as WebdriverIO.Capabilities, [], browser);
+
+      const result = await agentCommand('scroll to the footer link');
+
+      expect(mockDecideAgentActionWithJev).toHaveBeenCalledTimes(3);
+      expect(browser.scroll).toHaveBeenCalledWith(0, expect.any(Number));
+      expect(mockExecuteAgentAction).not.toHaveBeenCalled();
+      expect(result.actions).toEqual([]);
+      expect(result.goalVerified).toBe(true);
+    });
+
+    it('stops at maxSteps when the goal never verifies', async () => {
+      mockDecideAgentActionWithJev.mockResolvedValue({
+        engine: 'jev', action: 'CLICK', targetId: 'e1', goalMetNoul: 0.1,
+      });
+
+      const service = new AgentService({
+        typesafe: { enabled: true, apiKey: 'key-a', agent: true, maxSteps: 2 },
+      });
+      service.before({} as WebdriverIO.Capabilities, [], browser);
+
+      const result = await agentCommand('click the login button');
+
+      expect(mockDecideAgentActionWithJev).toHaveBeenCalledTimes(2);
+      expect(result.actions).toHaveLength(2);
+      expect(result.goalVerified).toBe(false);
+    });
+
+    it('runs the LLM on the current snapshot when Jev defers mid-loop', async () => {
+      mockDecideAgentActionWithJev
+        .mockResolvedValueOnce({ engine: 'jev', action: 'CLICK', targetId: 'e1', goalMetNoul: 0.1 })
+        .mockResolvedValueOnce({ engine: 'llm' })
+        .mockResolvedValueOnce({ engine: 'jev', action: 'DONE', goalMetNoul: 0.9 });
+
+      const service = new AgentService({ typesafe: { enabled: true, apiKey: 'key-a', agent: true } });
+      service.before({} as WebdriverIO.Capabilities, [], browser);
+
+      const result = await agentCommand('open the login page and sign in');
+
+      expect(mockProviderSend).toHaveBeenCalledTimes(1);
+      expect(mockParseLlmResponse).toHaveBeenCalledTimes(1);
+      expect(result.actions).toHaveLength(2);
+      expect(result.engine).toBe('jev');
+      expect(result.goalVerified).toBe(true);
+    });
+
+    it('keeps the loop after a WAIT when Jev then defers, instead of discarding the loop state', async () => {
+      mockDecideAgentActionWithJev
+        .mockResolvedValueOnce({ engine: 'jev', action: 'WAIT', goalMetNoul: 0.1 })
+        .mockResolvedValueOnce({ engine: 'llm' })
+        .mockResolvedValueOnce({ engine: 'jev', action: 'DONE', goalMetNoul: 0.9 });
+
+      const service = new AgentService({ typesafe: { enabled: true, apiKey: 'key-a', agent: true } });
+      service.before({} as WebdriverIO.Capabilities, [], browser);
+
+      const result = await agentCommand('wait for the page to settle and sign in');
+
+      expect(mockProviderSend).toHaveBeenCalledTimes(1);
+      expect(result.actions).toHaveLength(1);
+      expect(result.engine).toBe('jev');
+    });
+
+    it('returns no actions when the goal already reads as achieved', async () => {
+      mockDecideAgentActionWithJev.mockResolvedValueOnce({
+        engine: 'jev', action: 'CLICK', targetId: 'e1', goalMetNoul: 0.9,
       });
 
       const service = new AgentService({ typesafe: { enabled: true, apiKey: 'key-a', agent: true } });
@@ -575,39 +674,68 @@ describe('AgentService', () => {
 
       const result = await agentCommand('click the login button');
 
-      expect(result.goalVerified).toBe(false);
-      expect(mockVerifyGoalWithJev).toHaveBeenCalledTimes(2);
-      expect(mockLogInfo).toHaveBeenCalledWith(expect.stringContaining('goalMet noul 0.1'));
+      expect(mockDecideAgentActionWithJev).toHaveBeenCalledTimes(1);
+      expect(mockExecuteAgentAction).not.toHaveBeenCalled();
+      expect(result).toEqual({ actions: [], engine: 'jev', goalVerified: true });
     });
 
-    it('throws when the goal gate fails and strictGoalGate is set', async () => {
-      mockDecideAgentActionWithJev.mockResolvedValueOnce({ engine: 'jev', action: 'CLICK', targetId: 'e1' });
-      mockVerifyGoalWithJev.mockResolvedValue({
-        actionWorked: false,
-        goalMet: false,
-        noul: { actionWorked: 0.2, goalMet: 0.1 },
+    it('reports goalVerified false without throwing by default', async () => {
+      mockDecideAgentActionWithJev.mockResolvedValue({
+        engine: 'jev', action: 'CLICK', targetId: 'e1', goalMetNoul: 0.1,
       });
 
       const service = new AgentService({
-        typesafe: { enabled: true, apiKey: 'key-a', agent: true, strictGoalGate: true },
+        typesafe: { enabled: true, apiKey: 'key-a', agent: true, maxSteps: 1 },
+      });
+      service.before({} as WebdriverIO.Capabilities, [], browser);
+
+      const result = await agentCommand('click the login button');
+
+      expect(result.goalVerified).toBe(false);
+      expect(mockLogInfo).toHaveBeenCalledWith(expect.stringContaining('goalMet noul 0.1'));
+    });
+
+    it('throws when the loop ends unverified and strictGoalGate is set', async () => {
+      mockDecideAgentActionWithJev.mockResolvedValue({
+        engine: 'jev', action: 'CLICK', targetId: 'e1', goalMetNoul: 0.1,
+      });
+
+      const service = new AgentService({
+        typesafe: { enabled: true, apiKey: 'key-a', agent: true, maxSteps: 1, strictGoalGate: true },
       });
       service.before({} as WebdriverIO.Capabilities, [], browser);
 
       await expect(agentCommand('click the login button')).rejects.toThrow('Goal not verified');
     });
 
-    it('leaves goalVerified unset when the gate cannot run', async () => {
-      mockDecideAgentActionWithJev.mockResolvedValueOnce({ engine: 'jev', action: 'CLICK', targetId: 'e1' });
-      mockVerifyGoalWithJev.mockResolvedValue(null);
+    it('leaves goalVerified unset when the goal noul is malformed', async () => {
+      mockDecideAgentActionWithJev.mockResolvedValue({
+        engine: 'jev', action: 'CLICK', targetId: 'e1', goalMetNoul: null,
+      });
 
-      const service = new AgentService({ typesafe: { enabled: true, apiKey: 'key-a', agent: true } });
+      const service = new AgentService({
+        typesafe: { enabled: true, apiKey: 'key-a', agent: true, maxSteps: 1 },
+      });
       service.before({} as WebdriverIO.Capabilities, [], browser);
 
       const result = await agentCommand('click the login button');
 
       expect(result.engine).toBe('jev');
       expect(result.goalVerified).toBeUndefined();
-      expect(mockVerifyGoalWithJev).toHaveBeenCalledTimes(1);
+      expect(result.actions).toHaveLength(1);
+    });
+
+    it('throws when the goal cannot be verified and strictGoalGate is set', async () => {
+      mockDecideAgentActionWithJev.mockResolvedValue({
+        engine: 'jev', action: 'CLICK', targetId: 'e1', goalMetNoul: null,
+      });
+
+      const service = new AgentService({
+        typesafe: { enabled: true, apiKey: 'key-a', agent: true, maxSteps: 1, strictGoalGate: true },
+      });
+      service.before({} as WebdriverIO.Capabilities, [], browser);
+
+      await expect(agentCommand('click the login button')).rejects.toThrow('Goal not verified');
     });
   });
 

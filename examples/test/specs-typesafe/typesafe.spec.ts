@@ -24,6 +24,17 @@ describe('Jev decision backend', () => {
     await expect(browser).toHaveUrl('/javascript_alerts', { containing: true });
   });
 
+  it('runs a multi-step intent through the Jev loop', async () => {
+    await browser.url(BASE + '/');
+
+    const result = await browser.agent('open JavaScript Alerts and click the first alert button');
+
+    expect(result.engine).toBe('jev');
+    expect(result.actions.length).toBeGreaterThanOrEqual(2);
+    await expect(browser).toHaveUrl('/javascript_alerts', { containing: true });
+    await expect($('#result')).toHaveText(expect.stringContaining('You successfully clicked an alert'));
+  });
+
   it('defers value-typing intents to the LLM path', async () => {
     await browser.url(BASE + '/login');
 
