@@ -78,6 +78,10 @@ services: [['agent', {
 
 Three schemas: `anthropic` (Messages API), `openai` (Chat Completions), `ollama` (native API). `providerUrl` and `model` are required unless using `send` override. Config `request` override bypasses built-in logic.
 
+## TypeSafe (Jev)
+
+`typesafe: { enabled: true, agent: true }` replaces the LLM with the Jev (TypeSafe System One) decision engine for healing and fixing suggestions, and — with `agent: true` — for single-action `browser.agent()`. Field list and defaults live in `types/index.ts` (`TypeSafeConfig`); prompt/state shaping, confidence gates, and model pinning live in `healing/jev.ts`. Requires `OPENROUTER_API_KEY` or `typesafe.apiKey` — `before()` throws without one. LLM `schema`/`providerUrl`/`model` stay required even for Jev-only healing: `initializeProvider` runs unconditionally and intents Jev declines (typing a value, navigating, multi-step) fall back to it, so the LLM config is the safety net. Jev `agent()` runs then reports `engine: 'jev' | 'llm'` and a goal-gate `goalVerified` on the result (advisory by default, `strictGoalGate: true` to throw; unset when the gate could not run). The gate reads the DOM, so intents whose success is invisible there (downloads, browser chrome) false-negative it. Example config: `examples/wdio.typesafe.conf.ts`.
+
 ## Mobile
 
 Env vars in `examples/wdio.appium.conf.ts`: `APPIUM_HOST`, `APPIUM_PORT`, `APPIUM_PATH`, `DEVICE_NAME`, `PLATFORM_VERSION`, `AGENT_SCHEMA`, `PROVIDER_URL`, `AGENT_MODEL`. See config file for defaults.
